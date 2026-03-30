@@ -1,0 +1,25 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix schema: <http://schema.org/> .
+@prefix osm: <http://www.semanticweb.org/OSM-GTFS#> .
+@prefix etype: <http://knowdive.disi.unitn.it/etype#> .
+@prefix app: <http://knowdive.disi.unitn.it/trentino-app#> .
+
+# --- GERARCHIE DEL REFERENCE CONTEXT ---
+# Bar e Pub sono sottoclassi di catering (come da PDF)
+etype:bar_pub a owl:Class ;
+    rdfs:subClassOf osm:catering .
+
+# Definiamo le altre classi principali per pulizia
+etype:restaurant a owl:Class .
+etype:hotel a owl:Class .
+etype:museum a owl:Class .
+etype:train_station a owl:Class .
+etype:stop a owl:Class .
+etype:bicycle_station a owl:Class .
+etype:gas_station a owl:Class .
+
+# --- GERARCHIE DEL PERSONAL CONTEXT ---
+# Tourist è una sottoclasse di Person di schema.org
+app:Tourist a owl:Class ;
+    rdfs:subClassOf schema:Person .

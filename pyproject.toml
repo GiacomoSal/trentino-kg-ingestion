@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "osm2kg"
+version = "0.0.1"
+authors = [
+  { name="Alessandro Cornella", email="alessandro.cornella@studenti.unitn.it" },
+]
+description = "A python package for downloading, analyzing OSM data to create personalized knowledge graph"
+readme = "README.md"
+requires-python = ">=3.9"

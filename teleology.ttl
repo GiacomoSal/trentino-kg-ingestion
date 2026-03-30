@@ -1,0 +1,15 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix osm: <http://www.semanticweb.org/OSM-GTFS#> .
+@prefix app: <http://knowdive.disi.unitn.it/trentino-app#> .
+
+# --- PROPRIETÀ DEL PERSONAL CONTEXT ---
+# Definizione della relazione eatsAt
+app:eatsAt a owl:ObjectProperty ;
+    rdfs:domain app:Tourist ;
+    rdfs:range osm:catering .
+
+# Predisposizione per le visite future
+app:visits a owl:ObjectProperty ;
+    rdfs:domain app:Tourist ;
+    rdfs:range osm:destination .
