@@ -5,7 +5,7 @@ from rdflib.namespace import RDF
 import requests
 
 # Configurazione IP e lettura del mapping YAML
-GRAPHDB_URL = "http://192.168.1.XX:7200/repositories/Mio_Reference_KG/statements"
+GRAPHDB_URL = "http://192.168.178.33:7200/repositories/Mio_Reference_KG/statements"
 
 print("Lettura del mapping.yaml...")
 with open("mapping.yaml", "r") as file:
