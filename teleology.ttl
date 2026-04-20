@@ -15,5 +15,5 @@ app:visits a owl:ObjectProperty ;
 
 # --- DATA PROPERTIES (Attributi dei nodi) ---
 osm:name a owl:DatatypeProperty ;
-    rdfs:domain owl:Thing ;
+    rdfs:domain osm:Feature ;
     rdfs:range xsd:string .

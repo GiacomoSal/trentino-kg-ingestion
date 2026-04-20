@@ -215,3 +215,9 @@ __pycache__/
 
 # Temporary data folder
 data/
+
+# Generated KG data
+*.pkl
+*.nt
+
+cache/
