@@ -1,19 +1,27 @@
-@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix osm: <http://www.semanticweb.org/OSM-GTFS#> .
-@prefix app: <http://knowdive.disi.unitn.it/trentino-app#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix app: <http://teleology.kg/app#> .
+@prefix etype: <http://teleology.kg/etype#> .
 
-# --- OBJECT PROPERTIES (Relazioni tra nodi) ---
+# 1. Definiamo il Turista
+app:Tourist a owl:Class .
+
+# 2. Le interazioni (Object Properties) con DOMINIO e RANGE sistemati!
+
+# Relazione generica "Si trova in"
+app:isAt a owl:ObjectProperty ;
+    rdfs:domain app:Tourist ;
+    rdfs:range etype:Entity .
+
+# Relazione specifica "Mangia in"
 app:eatsAt a owl:ObjectProperty ;
+    rdfs:subPropertyOf app:isAt ;
     rdfs:domain app:Tourist ;
-    rdfs:range osm:catering .
+    rdfs:range etype:Restaurant .
 
-app:visits a owl:ObjectProperty ;
+# Relazione specifica "Beve in"
+app:drinksAt a owl:ObjectProperty ;
+    rdfs:subPropertyOf app:isAt ;
     rdfs:domain app:Tourist ;
-    rdfs:range osm:Feature .
-
-# --- DATA PROPERTIES (Attributi dei nodi) ---
-osm:name a owl:DatatypeProperty ;
-    rdfs:domain osm:Feature ;
-    rdfs:range xsd:string .
+    rdfs:range etype:Entity .

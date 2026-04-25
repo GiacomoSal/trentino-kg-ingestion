@@ -1,36 +1,25 @@
-@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix osm: <http://www.semanticweb.org/OSM-GTFS#> .
-@prefix etype: <http://knowdive.disi.unitn.it/etype#> .
-@prefix app: <http://knowdive.disi.unitn.it/trentino-app#> .
-@prefix schema: <http://schema.org/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix etype: <http://teleology.kg/etype#> .
+@prefix osm_ont: <http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#> .
 
-# --- RADICI PRINCIPALI ---
-osm:Feature a owl:Class ;
-    rdfs:subClassOf owl:Thing .
+# 1. Definiamo la nostra Entità radice generica
+etype:Entity a owl:Class . 
 
-schema:Person a owl:Class ;
-    rdfs:subClassOf owl:Thing .
+# 2. IL FIX DELLA RADICE: Diciamo a GraphDB che la classe base di OSM 
+# è una sottoclasse della nostra Entità unificata. Questo ripara l'albero!
+osm_ont:openstreetmap_place rdfs:subClassOf etype:Entity .
 
-# --- REFERENCE CONTEXT (Sottoclassi di Feature) ---
-osm:catering a owl:Class ;
-    rdfs:subClassOf osm:Feature .
+# 3. Le nostre classi specifiche unificate
+etype:Restaurant a owl:Class ;
+    rdfs:subClassOf etype:Entity .
 
-etype:bar_pub a owl:Class ;
-    rdfs:subClassOf osm:catering .
+etype:Bar a owl:Class ;
+    rdfs:subClassOf etype:Entity .
 
-etype:restaurant a owl:Class ;
-    rdfs:subClassOf osm:catering .
+etype:Cafe a owl:Class ;
+    rdfs:subClassOf etype:Entity .
 
-etype:hotel a owl:Class ;
-    rdfs:subClassOf osm:Feature .
-
-etype:museum a owl:Class ;
-    rdfs:subClassOf osm:Feature .
-
-etype:train_station a owl:Class ;
-    rdfs:subClassOf osm:Feature .
-
-# --- PERSONAL CONTEXT (Sottoclassi di Person) ---
-app:Tourist a owl:Class ;
-    rdfs:subClassOf schema:Person .
+etype:Pub a owl:Class ;
+    rdfs:subClassOf etype:Entity .

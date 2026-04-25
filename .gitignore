@@ -220,4 +220,5 @@ data/
 *.pkl
 *.nt
 
-cache/
+cache/*.pkl
+*.nt

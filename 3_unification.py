@@ -1,35 +1,61 @@
-from rdflib import Graph, Namespace
-from rdflib.namespace import RDF
-import requests
+from rdflib import Graph, URIRef, Namespace
+from rdflib.namespace import RDF, OWL
 
-GRAPHDB_URL = "http://192.168.178.33:7200/repositories/Mio_Reference_KG/statements"
+def main():
+    print("Caricamento del Source KG (puro OSM)...")
+    kg = Graph()
+    
+    try:
+        # Carichiamo il file generato dallo Script 2
+        kg.parse("source_kg.nt", format="nt")
+    except FileNotFoundError:
+        print("Errore: source_kg.nt non trovato. Lancia prima lo script 2!")
+        return
 
-print("Caricamento del grafo mappato...")
-kg = Graph()
-kg.parse("mapped_kg.nt", format="nt")
+    # --- NAMESPACE ---
+    OSM_ONT = Namespace("http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#")
+    OSM_KG = Namespace("http://osm.kg/")
+    # TODO: Verifica che questi URI corrispondano esattamente a quelli nei tuoi file .ttl!
+    ETYPE = Namespace("http://teleology.kg/etype#") 
+    APP = Namespace("http://teleology.kg/app#")
 
-# Definisci i namespace necessari
-APP = Namespace("http://knowdive.disi.unitn.it/trentino-app#")
-ETYPE = Namespace("http://knowdive.disi.unitn.it/etype#")
+    print("Inizio fase di Allineamento (Teleontologia) e Unificazione (Teleologia)...")
 
-# Inserimento Personal Context ed Entity Unification (usando per ora un match statico/coordinate)
-turista_uri = APP["Tourist/Giacomo"]
-kg.add((turista_uri, RDF.type, APP.Tourist))
+    # 1. Creiamo il Personal Context (Il Turista)
+    tourist_uri = URIRef("http://teleology.kg/tourist/Giacomo")
+    kg.add((tourist_uri, RDF.type, APP.Tourist))
 
-# Trova un nodo ristorante (puoi rendere questa logica più furba usando le coordinate come diceva Davide)
-primo_food = None
-for s, p, o in kg.triples((None, RDF.type, ETYPE.restaurant)):
-    primo_food = s
-    break
+    # 2. Cicliamo sui nodi per fare il Mapping e l'Unificazione
+    # Usiamo una lista per non modificare il grafo mentre lo cicliamo
+    for s, p, o in list(kg):
+        
+        # Se il nodo è un ristorante in OSM...
+        if p == RDF.type and o == OSM_ONT.point_restaurant:
+            # ALLINEAMENTO: Diciamo che questo nodo fisico è ANCHE un etype:Restaurant
+            kg.add((s, RDF.type, ETYPE.Restaurant))
+            # TELEOLOGIA: Il turista interagisce con questo nodo
+            kg.add((tourist_uri, APP.eatsAt, s))
 
-if primo_food:
-    kg.add((turista_uri, APP.eatsAt, primo_food))
-    print(f"Unificazione completata: Turista collegato a {primo_food}")
+        # Se il nodo è un bar in OSM...
+        elif p == RDF.type and o == OSM_ONT.point_bar:
+            kg.add((s, RDF.type, ETYPE.Bar))
+            kg.add((tourist_uri, APP.drinksAt, s))
 
-print("Invio KG unificato a GraphDB...")
-response = requests.post(GRAPHDB_URL, data=kg.serialize(format="nt"), headers={'Content-Type': 'application/n-triples'})
+        # Se il nodo è un cafe in OSM...
+        elif p == RDF.type and o == OSM_ONT.point_cafe:
+            kg.add((s, RDF.type, ETYPE.Cafe))
+            kg.add((tourist_uri, APP.drinksAt, s))
+            
+        # Se il nodo è un pub in OSM...
+        elif p == RDF.type and o == OSM_ONT.point_pub:
+            kg.add((s, RDF.type, ETYPE.Pub))
+            kg.add((tourist_uri, APP.drinksAt, s))
 
-if response.status_code == 204:
-    print("Successo: Dati caricati correttamente su GraphDB.")
-else:
-    print(f"Errore HTTP {response.status_code}.")
+    # Salvo il Knowledge Graph Finale Unificato
+    out_file = "final_unified_kg.nt"
+    kg.serialize(destination=out_file, format="nt", encoding="utf-8")
+    print(f"Finito! Grafo unificato salvato con successo in {out_file}")
+    print("Ora puoi caricare final_unified_kg.nt in GraphDB per le tue query SPARQL!")
+
+if __name__ == "__main__":
+    main()
