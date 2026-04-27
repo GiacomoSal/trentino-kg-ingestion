@@ -1,0 +1,45 @@
+# Definizione dei Namespace
+namespaces:
+  etype: "http://knowdive.disi.unitn.it/etype#"
+  osm: "http://www.semanticweb.org/OSM-GTFS#"
+  app: "http://knowdive.disi.unitn.it/trentino-app#"
+
+# Regole di Mapping (Schema-Driven)
+mappings:
+  # --- Food Establishment ---
+  - target_class: "etype:bar_pub"
+    osm_filter:
+      amenity: ["bar", "pub"]
+      
+  - target_class: "etype:restaurant"
+    osm_filter:
+      amenity: ["restaurant", "cafe", "fast_food"]
+
+  # --- Lodging Business ---
+  - target_class: "etype:hotel"
+    osm_filter:
+      tourism: ["hotel", "motel", "guest_house", "alpine_hut"]
+
+  # --- Tourist Attraction ---
+  - target_class: "etype:museum"
+    osm_filter:
+      tourism: ["museum", "gallery"]
+      historic: ["castle", "ruins"]
+
+  # --- Transportation ---
+  - target_class: "etype:train_station"
+    osm_filter:
+      railway: ["station", "halt"]
+      
+  - target_class: "etype:stop"
+    osm_filter:
+      highway: ["bus_stop"]
+      
+  - target_class: "etype:bicycle_station"
+    osm_filter:
+      amenity: ["bicycle_rental"]
+
+  # --- Local Business / Services ---
+  - target_class: "etype:gas_station"
+    osm_filter:
+      amenity: ["fuel"]

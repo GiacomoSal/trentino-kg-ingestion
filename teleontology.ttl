@@ -1,0 +1,25 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix etype: <http://teleology.kg/etype#> .
+@prefix osm_ont: <http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#> .
+
+# Questa e l'entita generica che fa da ponte per il reference context
+etype:Entity a owl:Class . 
+
+# Workaround per fixare l'albero di GraphDB:
+# dico che la classe base dell'ontologia OSM e' una sottoclasse della mia Entita unificata
+osm_ont:openstreetmap_place rdfs:subClassOf etype:Entity .
+
+# Mappatura delle classi specifiche del mio dominio
+etype:Restaurant a owl:Class ;
+    rdfs:subClassOf etype:Entity .
+
+etype:Bar a owl:Class ;
+    rdfs:subClassOf etype:Entity .
+
+etype:Cafe a owl:Class ;
+    rdfs:subClassOf etype:Entity .
+
+etype:Pub a owl:Class ;
+    rdfs:subClassOf etype:Entity .

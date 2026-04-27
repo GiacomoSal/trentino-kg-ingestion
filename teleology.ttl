@@ -1,0 +1,29 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix app: <http://knowdive.disi.unitn.it/trentino-app#> .
+@prefix etype: <http://teleology.kg/etype#> .
+@prefix schema: <http://schema.org/> .
+
+# Definisco il nodo del Turista e lo aggancio a schema.org come richiesto dalla matrice di mapping
+app:Tourist a owl:Class ;
+    rdfs:subClassOf schema:Person .
+
+# Qui metto le property per far interagire il turista con il mondo fisico.
+# Importante: domain e range devono essere esatti altrimenti GraphDB non inferisce bene.
+
+# Relazione generica di base
+app:isAt a owl:ObjectProperty ;
+    rdfs:domain app:Tourist ;
+    rdfs:range etype:Entity .
+
+# Proprieta specifiche che ereditano da quella generica
+app:eatsAt a owl:ObjectProperty ;
+    rdfs:subPropertyOf app:isAt ;
+    rdfs:domain app:Tourist ;
+    rdfs:range etype:Restaurant .
+
+app:drinksAt a owl:ObjectProperty ;
+    rdfs:subPropertyOf app:isAt ;
+    rdfs:domain app:Tourist ;
+    rdfs:range etype:Entity .

@@ -1,0 +1,6 @@
+@prefix app: <http://knowdive.disi.unitn.it/trentino-app#> .
+@prefix schema: <http://schema.org/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+<http://knowdive.disi.unitn.it/trentino-app#Tourist_Giacomo> rdf:type app:Tourist, schema:Person ;
+    schema:givenName "Giacomo" .
