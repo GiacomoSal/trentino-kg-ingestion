@@ -1,6 +1,20 @@
 @prefix app: <http://knowdive.disi.unitn.it/trentino-app#> .
 @prefix schema: <http://schema.org/> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix etype: <http://teleology.kg/etype#> .
 
+# Istanza del mio profilo
 <http://knowdive.disi.unitn.it/trentino-app#Tourist_Giacomo> rdf:type app:Tourist, schema:Person ;
     schema:givenName "Giacomo" .
+
+# --- PERSONAL CONTEXT (I MIEI POSTI) ---
+# Metto i luoghi dal punto di vista del turista. Poi lo script python 3 
+# li cerca su OSM usando il nome e fa il merge figo con owl:sameAs.
+
+app:Personal_Welcome_India rdf:type etype:Restaurant ;
+    schema:name "Welcome India" .
+<http://knowdive.disi.unitn.it/trentino-app#Tourist_Giacomo> app:eatsAt app:Personal_Welcome_India .
+
+app:Personal_Caffe_Trento rdf:type etype:Cafe ;
+    schema:name "Caffè Tridente" .
+<http://knowdive.disi.unitn.it/trentino-app#Tourist_Giacomo> app:drinksAt app:Personal_Caffe_Trento .

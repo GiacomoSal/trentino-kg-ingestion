@@ -222,3 +222,4 @@ data/
 
 cache/*.pkl
 *.nt
+cache/

@@ -1,75 +1,64 @@
 import rdflib
-from rdflib import Graph, Namespace
-from rdflib.namespace import RDF
+from rdflib import Graph, Namespace, URIRef
+from rdflib.namespace import RDF, OWL
 
 def main():
-    print("Avvio fase di Entity Unification e Teleologia...")
+    print("Avvio Entity Unification (doppi nodi e sameAs)...")
 
-    # Inizializzazione grafo
-    g = Graph()
+    g_osm = Graph()
+    g_tourist = Graph()
+    g_final = Graph()
     
-    # 1. Definisco i Namespace ESATTI usati nei vari file
     APP = Namespace("http://knowdive.disi.unitn.it/trentino-app#")
-    # Questo è il namespace che usi in 2_mapping.py per le classi fisiche
     OSM_ONT = Namespace("http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#")
-    
-    g.bind("app", APP)
-    g.bind("osm_ont", OSM_ONT)
+    SCHEMA = Namespace("http://schema.org/")
+    ETYPE = Namespace("http://teleology.kg/etype#")
 
-    # 2. Caricamento dei contesti
-    try:
-        g.parse("source_kg.nt", format="nt")
-        print("Reference Context (source_kg.nt) caricato con successo.")
-    except FileNotFoundError:
-        print("Errore: file source_kg.nt non trovato. Esegui prima lo script 2.")
-        return
+    # bind dei prefissi così il file finale si legge bene e non ha URI chilometrici
+    g_final.bind("app", APP)
+    g_final.bind("osm_ont", OSM_ONT)
+    g_final.bind("schema", SCHEMA)
+    g_final.bind("etype", ETYPE)
+    g_final.bind("owl", OWL)
 
     try:
-        g.parse("tourist_profile.ttl", format="turtle")
-        print("Personal Context (tourist_profile.ttl) caricato con successo.")
+        g_osm.parse("source_kg.nt", format="nt")
     except FileNotFoundError:
-        print("Errore: file tourist_profile.ttl non trovato.")
+        print("Manca source_kg.nt")
         return
 
-    # 3. Identificazione semantica del Turista
-    tourist_uri = None
-    for s in g.subjects(RDF.type, APP.Tourist):
-        tourist_uri = s
-        break 
-
-    if not tourist_uri:
-        print("Attenzione: Nessuna istanza di app:Tourist trovata nel grafo.")
+    try:
+        g_tourist.parse("tourist_profile.ttl", format="turtle")
+    except FileNotFoundError:
+        print("Manca tourist_profile.ttl")
         return
 
-    # 4. Creazione delle relazioni teleologiche (Formali)
-    ristoranti_trovati = 0
-    bar_trovati = 0
+    # unisco fisicamente i grafi (ma non ci sono ancora le relazioni logiche in mezzo)
+    g_final += g_osm
+    g_final += g_tourist
 
-    # Definisco le classi target basandomi ESATTAMENTE su come le salva lo script 2_mapping.py
-    target_restaurants = [OSM_ONT.point_restaurant]
-    target_bars = [OSM_ONT.point_cafe, OSM_ONT.point_pub]
+    match_trovati = 0
+    print("Cerco corrispondenze nome-nome tra Turista e OSM...")
 
-    # Cerco i ristoranti e creo l'arco eatsAt
-    for target_class in target_restaurants:
-        for entity_uri in g.subjects(RDF.type, target_class):
-            g.add((tourist_uri, APP.eatsAt, entity_uri))
-            ristoranti_trovati += 1
+    # mi ciclo tutti i posti salvati nel profilo utente (personal context)
+    for personal_node, _, place_name in g_tourist.triples((None, SCHEMA.name, None)):
+        
+        # metto tutto lower e strip per evitare che un cazzo di spazio mi faccia saltare il match
+        name_str = str(place_name).lower().strip()
 
-    # Cerco i bar/pub/cafe e creo l'arco drinksAt
-    for target_class in target_bars:
-        for entity_uri in g.subjects(RDF.type, target_class):
-            g.add((tourist_uri, APP.drinksAt, entity_uri))
-            bar_trovati += 1
+        # cerco nel grafo di osm se c'è un posto fisico che si chiama uguale
+        for osm_node, _, osm_name in g_osm.triples((None, OSM_ONT.name, None)):
+            
+            if str(osm_name).lower().strip() == name_str:
+                # trovato! piazzo il sameAs per unire l'entità utente a quella fisica. Provenance salva.
+                g_final.add((personal_node, OWL.sameAs, osm_node))
+                match_trovati += 1
+                print(f"[ MATCH ] {name_str} -> {osm_node}")
 
-    # 5. Salvataggio del Knowledge Graph unificato finale
     output_file = "final_unified_kg.nt"
-    g.serialize(destination=output_file, format="nt")
+    g_final.serialize(destination=output_file, format="nt")
     
-    print("\n--- Risultati Unificazione ---")
-    print(f"Turista allineato: {tourist_uri}")
-    print(f"Archi 'eatsAt' generati: {ristoranti_trovati}")
-    print(f"Archi 'drinksAt' generati: {bar_trovati}")
-    print(f"Grafo finale salvato in: {output_file}")
+    print(f"Finito. Trovati {match_trovati} match (owl:sameAs).")
 
 if __name__ == "__main__":
     main()

@@ -5,19 +5,19 @@
 @prefix etype: <http://teleology.kg/etype#> .
 @prefix schema: <http://schema.org/> .
 
-# Definisco il nodo del Turista e lo aggancio a schema.org come richiesto dalla matrice di mapping
+# Mappo la mia classe Tourist su Person di schema.org come da specifiche
 app:Tourist a owl:Class ;
     rdfs:subClassOf schema:Person .
 
-# Qui metto le property per far interagire il turista con il mondo fisico.
-# Importante: domain e range devono essere esatti altrimenti GraphDB non inferisce bene.
+# Object properties teleologiche (il turista e i POI)
+# NB: domain e range vanno messi precisi sennò GraphDB fa inferenza a caso
 
-# Relazione generica di base
+# Root property
 app:isAt a owl:ObjectProperty ;
     rdfs:domain app:Tourist ;
     rdfs:range etype:Entity .
 
-# Proprieta specifiche che ereditano da quella generica
+# Proprietà specializzate per food/beverage
 app:eatsAt a owl:ObjectProperty ;
     rdfs:subPropertyOf app:isAt ;
     rdfs:domain app:Tourist ;

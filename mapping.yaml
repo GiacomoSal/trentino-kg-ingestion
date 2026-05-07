@@ -1,12 +1,12 @@
-# Definizione dei Namespace
+# Prefissi per evitare di impazzire con gli url lunghi
 namespaces:
   etype: "http://knowdive.disi.unitn.it/etype#"
   osm: "http://www.semanticweb.org/OSM-GTFS#"
   app: "http://knowdive.disi.unitn.it/trentino-app#"
 
-# Regole di Mapping (Schema-Driven)
+# Mapping tra i tag sporchi di osm e le mie classi
+# TODO: ricordarsi di leggere questo file nel python 2_mapping invece di usare gli if
 mappings:
-  # --- Food Establishment ---
   - target_class: "etype:bar_pub"
     osm_filter:
       amenity: ["bar", "pub"]
@@ -15,18 +15,15 @@ mappings:
     osm_filter:
       amenity: ["restaurant", "cafe", "fast_food"]
 
-  # --- Lodging Business ---
   - target_class: "etype:hotel"
     osm_filter:
       tourism: ["hotel", "motel", "guest_house", "alpine_hut"]
 
-  # --- Tourist Attraction ---
   - target_class: "etype:museum"
     osm_filter:
       tourism: ["museum", "gallery"]
       historic: ["castle", "ruins"]
 
-  # --- Transportation ---
   - target_class: "etype:train_station"
     osm_filter:
       railway: ["station", "halt"]
@@ -39,7 +36,6 @@ mappings:
     osm_filter:
       amenity: ["bicycle_rental"]
 
-  # --- Local Business / Services ---
   - target_class: "etype:gas_station"
     osm_filter:
       amenity: ["fuel"]

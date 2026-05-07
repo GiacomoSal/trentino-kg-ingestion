@@ -4,22 +4,24 @@
 @prefix etype: <http://teleology.kg/etype#> .
 @prefix osm_ont: <http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#> .
 
-# Questa e l'entita generica che fa da ponte per il reference context
+# Root dell'entità per il reference context
 etype:Entity a owl:Class . 
 
-# Workaround per fixare l'albero di GraphDB:
-# dico che la classe base dell'ontologia OSM e' una sottoclasse della mia Entita unificata
+# Workaround per sistemare l'albero di classi su GraphDB e non avere nodi orfani
 osm_ont:openstreetmap_place rdfs:subClassOf etype:Entity .
 
-# Mappatura delle classi specifiche del mio dominio
+# --- CLASSI DOMINIO ---
+# Faccio ereditare le mie classi da quelle di OSM così mi becco 
+# le coordinate e gli id fisici gratis senza sbattimenti in Python
+
 etype:Restaurant a owl:Class ;
-    rdfs:subClassOf etype:Entity .
+    rdfs:subClassOf etype:Entity, osm_ont:point_restaurant .
 
 etype:Bar a owl:Class ;
-    rdfs:subClassOf etype:Entity .
+    rdfs:subClassOf etype:Entity, osm_ont:point_pub .
 
 etype:Cafe a owl:Class ;
-    rdfs:subClassOf etype:Entity .
+    rdfs:subClassOf etype:Entity, osm_ont:point_cafe .
 
 etype:Pub a owl:Class ;
-    rdfs:subClassOf etype:Entity .
+    rdfs:subClassOf etype:Entity, osm_ont:point_pub .
