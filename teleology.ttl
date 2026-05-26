@@ -1,27 +1,19 @@
-@prefix : <http://example.org/tuoprogetto/teleontology#> .
-@prefix ex: <http://example.org/tuoprogetto/data#> .
-@prefix osm: <http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#> .
-@prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix app: <http://knowdive.disi.unitn.it/trentino-app#> .
+@prefix etype: <http://teleology.kg/etype#> .
+@prefix schema: <http://schema.org/> .
 
-# --- SCHEMA MINIMO (TELEOLOGY LAYER) ---
-# Dichiarazione dei soli nodi e proprietà strettamente necessari all'applicazione
-:Tourist a owl:Class .
-:PersonalRestaurant a owl:Class .
-osm:restaurant a owl:Class .
-:eatsAt a owl:ObjectProperty .
-:hasName a owl:DatatypeProperty .
+# --- SCHEMA APPLICAZIONE (TBOX) ---
+app:Tourist a owl:Class ;
+    rdfs:subClassOf schema:Person .
 
-# --- ISTANZE E DATI REALI (ABOX) ---
-# Profilo del turista e azione specifica
-ex:Tourist_Giacomo a :Tourist ;
-    :eatsAt ex:Personal_Caffe_Trento .
+app:isAt a owl:ObjectProperty ;
+    rdfs:domain app:Tourist ;
+    rdfs:range etype:Entity .
 
-# Istanza nel contesto personale unificata a OSM tramite sameAs
-ex:Personal_Caffe_Trento a :PersonalRestaurant ;
-    :hasName "Caffè Trento"^^xsd:string ;
-    owl:sameAs <http://osm.org/node/991782724> .
-
-# Nodo fisico di riferimento su OpenStreetMap
-<http://osm.org/node/991782724> a osm:restaurant .
+app:eatsAt a owl:ObjectProperty ;
+    rdfs:subPropertyOf app:isAt ;
+    rdfs:domain app:Tourist ;
+    rdfs:range etype:Restaurant .

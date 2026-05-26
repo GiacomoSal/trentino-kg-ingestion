@@ -1,48 +1,29 @@
-@prefix : <http://example.org/tuoprogetto/teleontology#> .
-@prefix osm: <http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#> .
-@prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix etype: <http://teleology.kg/etype#> .
+@prefix osm_ont: <http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#> .
 
-<http://example.org/tuoprogetto/teleontology> a owl:Ontology ;
-    rdfs:comment "Teleontology per il contesto personale del turista e l'allineamento con OSM."@it .
-
-# --- CLASSI CORE ---
-:Tourist a owl:Class ;
-    rdfs:label "Tourist"@en .
+# --- CONTEXT ROOT ---
+etype:Entity a owl:Class . 
 
 # --- CLASSI BASE OSM (IMPORTATE) ---
-osm:catering a owl:Class .
+osm_ont:catering a owl:Class .
 
-osm:restaurant a owl:Class ;
-    rdfs:subClassOf osm:catering ;
+osm_ont:restaurant a owl:Class ;
+    rdfs:subClassOf osm_ont:catering ;
     rdfs:label "restaurant"@en .
 
-osm:point_restaurant a owl:Class ;
-    rdfs:subClassOf osm:restaurant ;
+osm_ont:point_restaurant a owl:Class ;
+    rdfs:subClassOf osm_ont:restaurant ;
     rdfs:label "point_restaurant"@en .
 
-osm:polygon_restaurant a owl:Class ;
-    rdfs:subClassOf osm:restaurant ;
+osm_ont:polygon_restaurant a owl:Class ;
+    rdfs:subClassOf osm_ont:restaurant ;
     rdfs:label "polygon_restaurant"@en .
 
-# --- ESTENSIONI CONTESTO PERSONALE ---
-# Subclassing nodi OSM per isolare i dati utente (Context Unification)
-:PersonalRestaurant a owl:Class ;
-    rdfs:subClassOf osm:restaurant ;
-    rdfs:label "Personal Context Restaurant"@en .
-
-# --- OBJECT PROPERTIES ---
-# Connette l'attore turista all'entità del contesto personale
-:eatsAt a owl:ObjectProperty ;
-    rdfs:domain :Tourist ;
-    rdfs:range :PersonalRestaurant ;
-    rdfs:label "eats at"@en .
-
-# --- DATA PROPERTIES ---
-# Ereditata automaticamente da :PersonalRestaurant tramite subclassing
-:hasName a owl:DatatypeProperty ;
-    rdfs:domain osm:restaurant ;
-    rdfs:range xsd:string ;
-    rdfs:label "has name"@en .
+# --- ALINEAMENTO CLASSI (CONTEXT UNIFICATION) ---
+# La classe del tuo contesto eredita direttamente dal nodo corrispondente di OSM
+etype:Restaurant a owl:Class ;
+    rdfs:subClassOf etype:Entity, osm_ont:restaurant ;
+    rdfs:label "Restaurant"@en .
