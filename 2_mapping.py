@@ -1,29 +1,40 @@
 import pickle
 import re
+import yaml
 from rdflib import Graph, URIRef, Literal, Namespace
 from rdflib.namespace import RDF, XSD
 
-# namespace dell'ontologia base (non toccare quello lungo che sennò salta tutto in GraphDB)
+# Namespaces
 OSM_ONT = Namespace("http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#")
-# base URI per i nodi OSM fisici (serve per la provenance come mi ha detto Davide)
-OSM_KG = Namespace("http://osm.kg/") 
+OSM_KG = Namespace("http://osm.kg/")
+ETYPE = Namespace("http://teleology.kg/etype#")
+
+def load_mapping_rules(filepath="mapping.yaml"):
+    """Loads semantic mapping rules from YAML configuration."""
+    with open(filepath, "r") as f:
+        config = yaml.safe_load(f)
+    return config.get("mappings", [])
 
 def main():
-    print("Carico i dati raw dalla cache...")
+    print("Loading raw data from cache...")
     try:
         with open("raw_osm_data.pkl", "rb") as f:
             raw_data = pickle.load(f)
     except FileNotFoundError:
-        print("Errore: file raw_osm_data.pkl non trovato. Fai girare prima 1_extraction.py")
+        print("[ERROR] raw_osm_data.pkl not found. Run 1_extraction.py first.")
         return
+
+    # Load dynamic mapping rules
+    mapping_rules = load_mapping_rules()
 
     kg = Graph()
     kg.bind("osm_ont", OSM_ONT)
     kg.bind("osm", OSM_KG)
+    kg.bind("etype", ETYPE)
 
-    print("Genero il SOG-OSM...")
+    print("Generating Source KG with dynamic mapping...")
 
-    # check brutto per capire se raw_data è un df o un dizionario normale
+    # Handle both DataFrame and dict structures
     if hasattr(raw_data, "iterrows"):
         element_list = [row.to_dict() | {"_index_id": index} for index, row in raw_data.iterrows()]
     elif isinstance(raw_data, dict):
@@ -32,44 +43,47 @@ def main():
         element_list = raw_data
 
     for element in element_list:
-        # fix per gli id sporchi di OSMnx tipo ('node', 867377379)
         raw_id_str = str(element.get("osmid", element.get("id", element.get("_index_id", ""))))
         
-        # piglio solo i numeri con una regex
+        # Extract numerical ID
         numeri = re.findall(r'\d+', raw_id_str)
         if not numeri:
             continue
         clean_osm_id = numeri[-1] 
 
-        # estraggo i tags dall'elemento
         tags = element.get("tags", element)
-
-        # uso l'id vero di osm per non perdere la provenienza del dato
         node_uri = URIRef(f"http://osm.kg/{clean_osm_id}")
         
-        # metto la root class sennò in graphdb l'albero si sminchia
+        # Base entity typing
         kg.add((node_uri, RDF.type, OSM_ONT.openstreetmap_place))
         
-        amenity = tags.get("amenity")
+        # Dynamic POI mapping based on mapping.yaml
+        for rule in mapping_rules:
+            target_class_full = rule.get("target_class", "")
+            filters = rule.get("osm_filter", {})
+
+            # Check if any OSM tag matches the defined filters for this target class
+            rule_matched = False
+            for osm_key, allowed_values in filters.items():
+                if tags.get(osm_key) in allowed_values:
+                    rule_matched = True
+                    break
+            
+            if rule_matched:
+                # Extract class name (e.g., 'etype:restaurant' -> 'restaurant')
+                class_name = target_class_full.split(":")[-1]
+                kg.add((node_uri, RDF.type, ETYPE[class_name]))
+                break # Avoid multiple assignments if one rule perfectly matches
         
-        # FIXME: da automatizzare leggendo dal yaml, per ora lascio gli if a mano per testare
-        if amenity == "restaurant":
-            kg.add((node_uri, RDF.type, OSM_ONT.point_restaurant))
-        elif amenity == "cafe":
-            kg.add((node_uri, RDF.type, OSM_ONT.point_cafe))
-        elif amenity == "pub":
-            kg.add((node_uri, RDF.type, OSM_ONT.point_pub))
-        
-        # cast espliciti dei tipi per evitare rogne in fase di inferenza
+        # Casting basic properties
         kg.add((node_uri, OSM_ONT.osm_id, Literal(clean_osm_id, datatype=XSD.integer)))
         
-        # controllo che il name sia stringa per colpa di pandas che a volte ci sbatte dentro i NaN
         if "name" in tags and isinstance(tags["name"], str):
             kg.add((node_uri, OSM_ONT.name, Literal(tags["name"], datatype=XSD.string)))
 
     out_file = "source_kg.nt"
     kg.serialize(destination=out_file, format="nt", encoding="utf-8")
-    print(f"Finito. Salvato in {out_file}")
+    print(f"Process completed. Graph saved to {out_file}")
 
 if __name__ == "__main__":
     main()
