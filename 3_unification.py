@@ -1,64 +1,75 @@
-import rdflib
-from rdflib import Graph, Namespace, URIRef
+import os
+from rdflib import Graph, URIRef, Namespace
 from rdflib.namespace import RDF, OWL
 
+# Project namespaces
+APP = Namespace("http://knowdive.disi.unitn.it/trentino-app#")
+OSM_ONT = Namespace("http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#")
+ETYPE = Namespace("http://teleology.kg/etype#")
+
 def main():
-    print("Avvio Entity Unification (doppi nodi e sameAs)...")
-
-    g_osm = Graph()
-    g_tourist = Graph()
-    g_final = Graph()
+    print("Loading Knowledge Graphs...")
+    personal_kg = Graph()
+    reference_kg = Graph()
     
-    APP = Namespace("http://knowdive.disi.unitn.it/trentino-app#")
-    OSM_ONT = Namespace("http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#")
-    SCHEMA = Namespace("http://schema.org/")
-    ETYPE = Namespace("http://teleology.kg/etype#")
-
-    # bind dei prefissi così il file finale si legge bene e non ha URI chilometrici
-    g_final.bind("app", APP)
-    g_final.bind("osm_ont", OSM_ONT)
-    g_final.bind("schema", SCHEMA)
-    g_final.bind("etype", ETYPE)
-    g_final.bind("owl", OWL)
-
-    try:
-        g_osm.parse("source_kg.nt", format="nt")
-    except FileNotFoundError:
-        print("Manca source_kg.nt")
+    # Load input (Personal Context) and OSM graph (Reference Context)
+    if os.path.exists("tourist_profile.ttl") and os.path.exists("source_kg.nt"):
+        personal_kg.parse("tourist_profile.ttl", format="turtle")
+        reference_kg.parse("source_kg.nt", format="nt")
+    else:
+        print("[ERROR] Input graphs missing. Check tourist_profile.ttl and source_kg.nt")
         return
 
-    try:
-        g_tourist.parse("tourist_profile.ttl", format="turtle")
-    except FileNotFoundError:
-        print("Manca tourist_profile.ttl")
-        return
+    # Initialize unified final graph
+    unified_kg = Graph()
+    unified_kg += personal_kg
+    unified_kg += reference_kg
 
-    # unisco fisicamente i grafi (ma non ci sono ancora le relazioni logiche in mezzo)
-    g_final += g_osm
-    g_final += g_tourist
+    # Bind prefixes for clean output serialization
+    unified_kg.bind("app", APP)
+    unified_kg.bind("owl", OWL)
+    unified_kg.bind("osm_ont", OSM_ONT)
+    unified_kg.bind("etype", ETYPE)
 
-    match_trovati = 0
-    print("Cerco corrispondenze nome-nome tra Turista e OSM...")
+    print("Executing Entity Resolution (Identifying Set: Name + Type)...")
+    match_count = 0
 
-    # mi ciclo tutti i posti salvati nel profilo utente (personal context)
-    for personal_node, _, place_name in g_tourist.triples((None, SCHEMA.name, None)):
+    # 1. Iterate over all typed nodes in Personal Context
+    for personal_node, _, p_type in personal_kg.triples((None, RDF.type, None)):
         
-        # metto tutto lower e strip per evitare che un cazzo di spazio mi faccia saltare il match
-        name_str = str(place_name).lower().strip()
-
-        # cerco nel grafo di osm se c'è un posto fisico che si chiama uguale
-        for osm_node, _, osm_name in g_osm.triples((None, OSM_ONT.name, None)):
+        # Filter for target domain types only (e.g., etype:Restaurant)
+        if not str(p_type).startswith(str(ETYPE)):
+            continue
             
-            if str(osm_name).lower().strip() == name_str:
-                # trovato! piazzo il sameAs per unire l'entità utente a quella fisica. Provenance salva.
-                g_final.add((personal_node, OWL.sameAs, osm_node))
-                match_trovati += 1
-                print(f"[ MATCH ] {name_str} -> {osm_node}")
+        # 2. Extract personal node name
+        personal_name = None
+        for _, p, o in personal_kg.triples((personal_node, None, None)):
+            # Flexible search for 'name' property (e.g., schema:name)
+            if "name" in str(p).lower():
+                personal_name = str(o).lower().strip()
+                break
+        
+        if not personal_name:
+            continue
 
-    output_file = "final_unified_kg.nt"
-    g_final.serialize(destination=output_file, format="nt")
-    
-    print(f"Finito. Trovati {match_trovati} match (owl:sameAs).")
+        # 3. IDENTIFYING SET LOGIC: 
+        # Match Reference Context (OSM) node with EXACT SAME TYPE...
+        for osm_node, _, _ in reference_kg.triples((None, RDF.type, p_type)):
+            
+            # ... AND EXACT SAME NAME
+            for _, _, osm_name_literal in reference_kg.triples((osm_node, OSM_ONT.name, None)):
+                osm_name = str(osm_name_literal).lower().strip()
+                
+                if personal_name == osm_name:
+                    # IDENTIFYING SET FULL MATCH! Generate owl:sameAs bridge
+                    unified_kg.add((personal_node, OWL.sameAs, osm_node))
+                    match_count += 1
+                    print(f"[+] Bridge created: {personal_node.split('#')[-1]} <sameAs> {osm_node.split('/')[-1]}")
+                    break
+
+    out_file = "unified_kg.ttl"
+    unified_kg.serialize(destination=out_file, format="turtle")
+    print(f"Unification completed. {match_count} owl:sameAs bridges generated. Saved to {out_file}")
 
 if __name__ == "__main__":
     main()
