@@ -1,41 +1,44 @@
-# Prefissi per evitare di impazzire con gli url lunghi
+# Namespace definitions for clean URIs
 namespaces:
-  etype: "http://knowdive.disi.unitn.it/etype#"
-  osm: "http://www.semanticweb.org/OSM-GTFS#"
+  etype: "http://teleology.kg/etype#"
+  osm: "http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#"
   app: "http://knowdive.disi.unitn.it/trentino-app#"
 
-# Mapping tra i tag sporchi di osm e le mie classi
-# TODO: ricordarsi di leggere questo file nel python 2_mapping invece di usare gli if
+# Semantic mappings from raw OSM tags to TBox classes
 mappings:
-  - target_class: "etype:bar_pub"
+  - target_class: "etype:Bar_Pub"
     osm_filter:
       amenity: ["bar", "pub"]
       
-  - target_class: "etype:restaurant"
+  - target_class: "etype:Restaurant"
     osm_filter:
-      amenity: ["restaurant", "cafe", "fast_food"]
+      amenity: ["restaurant", "fast_food"]
 
-  - target_class: "etype:hotel"
+  - target_class: "etype:Cafe"
+    osm_filter:
+      amenity: ["cafe"]
+
+  - target_class: "etype:Hotel"
     osm_filter:
       tourism: ["hotel", "motel", "guest_house", "alpine_hut"]
 
-  - target_class: "etype:museum"
+  - target_class: "etype:Museum"
     osm_filter:
       tourism: ["museum", "gallery"]
       historic: ["castle", "ruins"]
 
-  - target_class: "etype:train_station"
+  - target_class: "etype:Train_Station"
     osm_filter:
       railway: ["station", "halt"]
       
-  - target_class: "etype:stop"
+  - target_class: "etype:Stop"
     osm_filter:
       highway: ["bus_stop"]
       
-  - target_class: "etype:bicycle_station"
+  - target_class: "etype:Bicycle_Station"
     osm_filter:
       amenity: ["bicycle_rental"]
 
-  - target_class: "etype:gas_station"
+  - target_class: "etype:Gas_Station"
     osm_filter:
       amenity: ["fuel"]

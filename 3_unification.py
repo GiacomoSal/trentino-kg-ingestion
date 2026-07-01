@@ -52,15 +52,20 @@ def main():
         if not personal_name:
             continue
 
-        # 3. IDENTIFYING SET LOGIC: 
-        # Match Reference Context (OSM) node with EXACT SAME TYPE...
-        for osm_node, _, _ in reference_kg.triples((None, RDF.type, p_type)):
+        # 3. IDENTIFYING SET LOGIC (Case-insensitive Type + Elastic Name)
+        # Match Reference Context (OSM) node with SAME TYPE
+        for osm_node, _, osm_type in reference_kg.triples((None, RDF.type, None)):
             
-            # ... AND EXACT SAME NAME
+            # Robust type checking (case-insensitive to prevent mismatch errors)
+            if str(osm_type).lower() != str(p_type).lower():
+                continue
+            
+            # ... AND MATCHING NAME
             for _, _, osm_name_literal in reference_kg.triples((osm_node, OSM_ONT.name, None)):
                 osm_name = str(osm_name_literal).lower().strip()
                 
-                if personal_name == osm_name:
+                # Elastic Match: True if one string is fully contained within the other
+                if personal_name in osm_name or osm_name in personal_name:
                     # IDENTIFYING SET FULL MATCH! Generate owl:sameAs bridge
                     unified_kg.add((personal_node, OWL.sameAs, osm_node))
                     match_count += 1
@@ -69,7 +74,7 @@ def main():
 
     out_file = "unified_kg.ttl"
     unified_kg.serialize(destination=out_file, format="turtle")
-    print(f"Unification completed. {match_count} owl:sameAs bridges generated. Saved to {out_file}")
+    print(f"\nUnification completed. {match_count} owl:sameAs bridges generated. Saved to {out_file}")
 
 if __name__ == "__main__":
     main()
