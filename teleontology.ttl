@@ -3,6 +3,7 @@
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix etype: <http://teleology.kg/etype#> .
 @prefix osm_ont: <http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#> .
+@prefix schema: <http://schema.org/> .
 
 # --- CONTEXT ROOT ---
 etype:Entity a owl:Class . 
@@ -22,8 +23,14 @@ osm_ont:polygon_restaurant a owl:Class ;
     rdfs:subClassOf osm_ont:restaurant ;
     rdfs:label "polygon_restaurant"@en .
 
-# --- ALINEAMENTO CLASSI (CONTEXT UNIFICATION) ---
-# La classe del tuo contesto eredita direttamente dal nodo corrispondente di OSM
+# --- ALLINEAMENTO CLASSI (CONTEXT UNIFICATION) ---
 etype:Restaurant a owl:Class ;
     rdfs:subClassOf etype:Entity, osm_ont:restaurant ;
     rdfs:label "Restaurant"@en .
+
+# --- ALLINEAMENTO PROPRIETÀ (PROPERTY MAPPING) ---
+schema:name a owl:DatatypeProperty .
+osm_ont:name a owl:DatatypeProperty .
+
+# Mappatura formale: definiamo che le due proprietà sono equivalenti
+schema:name owl:equivalentProperty osm_ont:name .
