@@ -2,10 +2,10 @@ import os
 from rdflib import Graph, URIRef, Namespace
 from rdflib.namespace import RDF, OWL
 
-# Project namespaces
+# Project namespaces (UPDATED TO OFFICIAL DISI NAMESPACE)
 APP = Namespace("http://knowdive.disi.unitn.it/trentino-app#")
 OSM_ONT = Namespace("http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#")
-ETYPE = Namespace("http://teleology.kg/etype#")
+ETYPE = Namespace("http://knowdive.disi.unitn.it/etype#")
 
 def main():
     print("Loading Knowledge Graphs...")
