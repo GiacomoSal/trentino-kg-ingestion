@@ -1,107 +1,202 @@
-import pickle
-import re
-import yaml
-from rdflib import Graph, URIRef, Literal, Namespace
-from rdflib.namespace import RDF, XSD
+"""Stage 2: mapping.
 
-# Official KnowDive namespaces
-OSM_ONT = Namespace("http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#")
-OSM_KG = Namespace("http://osm.kg/")
-ETYPE = Namespace("http://knowdive.disi.unitn.it/etype#")
+a) Builds the OSM source KG (osm_kg.ttl) from the data extracted in stage 1. Each
+   element keeps its original OpenStreetMap URI and gets the class of the OSM
+   ontology chosen by osm_source.yaml. The OSM ontology is also the unifying
+   ontology, so these types need no further mapping.
+b) Builds the teleontology (teleontology.ttl) from the alignment files
+   (alignment_*.yaml): the axioms that connect the types and properties of the
+   other sources to the unifying ontology, plus the concepts they add to it.
+   The entities keep their original types: the alignment lives only here.
+"""
+import glob
+import sys
+from typing import Iterable, Optional, Tuple
 
-def load_mapping_rules(filepath="mapping.yaml"):
-    """Loads semantic mapping rules from YAML configuration."""
-    with open(filepath, "r") as f:
-        config = yaml.safe_load(f)
-    return config.get("mappings", [])
+import pandas as pd
+from rdflib import Graph, Literal, Namespace, URIRef
+from rdflib.namespace import OWL, RDF, RDFS, XSD
 
-def main():
-    print("Loading raw data from cache...")
-    try:
-        with open("raw_osm_data.pkl", "rb") as f:
-            raw_data = pickle.load(f)
-    except FileNotFoundError:
-        print("[ERROR] raw_osm_data.pkl not found. Run 1_extraction.py first.")
-        return
+from kg_utils import clean, expand, load_yaml
 
-    mapping_rules = load_mapping_rules()
+OSM_CONFIG = "osm_source.yaml"
+RAW_DATA = "raw_osm_data.pkl"
+OSM_OUTPUT = "osm_kg.ttl"
+UNIFIED_ONTOLOGY = "OSM-GTFS-zzz.owl"
+TELEONTOLOGY_OUTPUT = "teleontology.ttl"
 
-    kg = Graph()
-    kg.bind("osm_ont", OSM_ONT)
-    kg.bind("osm", OSM_KG)
-    kg.bind("etype", ETYPE)
+OSM_ELEMENT = "https://www.openstreetmap.org/"
+OSM_KEY = Namespace("https://wiki.openstreetmap.org/wiki/Key:")
+GEO = Namespace("http://www.w3.org/2003/01/geo/wgs84_pos#")
 
-    print("Generating Source KG with dynamic mapping and properties...")
 
-    if hasattr(raw_data, "iterrows"):
-        element_list = [row.to_dict() | {"_index_id": index} for index, row in raw_data.iterrows()]
-    elif isinstance(raw_data, dict):
-        element_list = list(raw_data.values())
+# ---------------------------------------------------------------- a) OSM source KG
+
+def element_ref(index_value, row) -> Optional[Tuple[str, str]]:
+    """Returns (element type, numeric id) of an OSM element.
+
+    osm2kg indexes the GeoDataFrame by (element, id), e.g. ('node', 1147756663).
+    The element type is part of the URI: node, way and relation ids can coincide.
+    """
+    if isinstance(index_value, tuple) and len(index_value) == 2:
+        element, osm_id = index_value
     else:
-        element_list = raw_data
+        element, osm_id = row.get("element"), row.get("id", index_value)
+    element, osm_id = clean(element), clean(osm_id)
+    if element is None or osm_id is None:
+        return None
+    return str(element), str(int(osm_id))
 
-    for element in element_list:
-        tags = element.get("tags", {})
-        if not tags:
-            tags = element
 
-        # LA TUA LOGICA ORIGINALE PER GLI ID (Estrarre solo i numeri!)
-        raw_id_str = str(element.get("osmid", element.get("id", element.get("_index_id", ""))))
-        numeri = re.findall(r'\d+', raw_id_str)
-        if not numeri:
+def match_rule(tags, rules, ns) -> Optional[URIRef]:
+    """Class of the first rule whose filter matches the element's tags."""
+    for rule in rules:
+        for key, allowed in rule.get("osm_filter", {}).items():
+            if clean(tags.get(key)) in allowed:
+                return expand(rule["target_class"], ns)
+    return None
+
+
+def build_osm_kg(raw: pd.DataFrame, cfg: dict) -> Graph:
+    ns = cfg["namespaces"]
+    osm_ont = Namespace(ns["osm_ont"])
+    kg = Graph()
+    kg.bind("osm_ont", osm_ont)
+    kg.bind("geo", GEO, replace=True)
+    kg.bind("osmkey", OSM_KEY)
+
+    skipped = 0
+    for index_value, row in raw.iterrows():
+        ref = element_ref(index_value, row)
+        cls = match_rule(row, cfg["mappings"], ns)
+        if ref is None or cls is None:
+            skipped += 1
             continue
-        clean_osm_id = numeri[-1]
-            
-        node_uri = URIRef(f"http://osm.kg/{clean_osm_id}")
-        kg.add((node_uri, RDF.type, OSM_ONT.openstreetmap_place))
-        
-        # 1. Type Mapping (Classes)
-        rule_matched = False
-        for rule in mapping_rules:
-            target_class_full = rule.get("target_class", "")
-            filters = rule.get("osm_filter", {})
+        element, osm_id = ref
+        node = URIRef(f"{OSM_ELEMENT}{element}/{osm_id}")
 
-            for osm_key, allowed_values in filters.items():
-                if tags.get(osm_key) in allowed_values:
-                    rule_matched = True
-                    break
-            
-            if rule_matched:
-                class_name = target_class_full.split(":")[-1]
-                kg.add((node_uri, RDF.type, ETYPE[class_name]))
-                break 
-        
-        # 2. Property Mapping (Extracting physical properties required for evaluation)
-        kg.add((node_uri, OSM_ONT.osm_id, Literal(clean_osm_id, datatype=XSD.integer)))
-        
-        # Name
-        if "name" in tags and isinstance(tags["name"], str):
-            kg.add((node_uri, OSM_ONT.name, Literal(tags["name"], datatype=XSD.string)))
-            
-        # City
-        if "addr:city" in tags:
-            kg.add((node_uri, ETYPE.has_city, Literal(tags["addr:city"], datatype=XSD.string)))
-            
-        # Full address (Street + Housenumber)
-        street = tags.get("addr:street", "")
-        housenumber = tags.get("addr:housenumber", "")
-        if street:
-            full_address = f"{street} {housenumber}".strip()
-            kg.add((node_uri, ETYPE.has_address, Literal(full_address, datatype=XSD.string)))
-            
-        # Phone number
-        phone = tags.get("phone", tags.get("contact:phone", ""))
-        if phone:
-            kg.add((node_uri, ETYPE.has_phone, Literal(phone, datatype=XSD.string)))
+        kg.add((node, RDF.type, cls))
+        kg.add((node, osm_ont.osm_id, Literal(int(osm_id), datatype=XSD.integer)))
+        name = clean(row.get("name"))
+        if isinstance(name, str):
+            kg.add((node, osm_ont.name, Literal(name, datatype=XSD.string)))
 
-        # Spatial coordinates (if available from the dataframe)
-        if "lat" in element and "lon" in element:
-            kg.add((node_uri, ETYPE.has_latitude, Literal(element["lat"], datatype=XSD.float)))
-            kg.add((node_uri, ETYPE.has_longitude, Literal(element["lon"], datatype=XSD.float)))
+        # Point used for the geographic primitive: the centroid of the geometry
+        geometry = row.get("geometry")
+        if geometry is not None and not getattr(geometry, "is_empty", False):
+            centroid = geometry.centroid
+            kg.add((node, GEO.lat, Literal(round(centroid.y, 7), datatype=XSD.float)))
+            kg.add((node, GEO.long, Literal(round(centroid.x, 7), datatype=XSD.float)))
 
-    out_file = "source_kg.nt"
-    kg.serialize(destination=out_file, format="nt", encoding="utf-8")
-    print(f"Source KG successfully generated. Saved to {out_file}")
+        for tag in cfg.get("tags_as_properties", []):
+            value = clean(row.get(tag))
+            if value is not None:
+                # ':' is percent-encoded so the key stays one local name (osmkey:addr%3Astreet)
+                kg.add((node, OSM_KEY[tag.replace(":", "%3A")], Literal(str(value), datatype=XSD.string)))
+
+    if skipped:
+        print(f"  {skipped} elements skipped (no id or no matching rule)")
+    return kg
+
+
+# ---------------------------------------------------------------- b) teleontology
+
+def check_exists(term: URIRef, ontology: Graph, where: str) -> None:
+    if (term, None, None) not in ontology:
+        print(f"  [WARNING] {term} is not defined in {where}")
+
+
+def copy_declaration(term: URIRef, source: Graph, target: Graph, predicates: Iterable) -> None:
+    for predicate in predicates:
+        for value in source.objects(term, predicate):
+            target.add((term, predicate, value))
+
+
+def add_alignment(tele: Graph, alignment: dict, unified: Graph) -> None:
+    ns = alignment["namespaces"]
+    source = Graph()
+    source.parse(alignment["source_ontology"])
+    name = alignment["source"]
+
+    for rule in alignment.get("classes", []):
+        cls = expand(rule["class"], ns)
+        check_exists(cls, source, f"the {name} ontology")
+        tele.add((cls, RDF.type, OWL.Class))
+        copy_declaration(cls, source, tele, [RDFS.label, RDFS.comment])
+        op = rule["operation"]
+        if op == "subclass_of":
+            target = expand(rule["target"], ns)
+            check_exists(target, unified, "the unifying ontology")
+            tele.add((cls, RDFS.subClassOf, target))
+        elif op == "superclass_of":
+            for t in rule["targets"]:
+                target = expand(t, ns)
+                check_exists(target, unified, "the unifying ontology")
+                tele.add((target, RDFS.subClassOf, cls))
+            if rule.get("parent"):
+                tele.add((cls, RDFS.subClassOf, expand(rule["parent"], ns)))
+        elif op == "extend":
+            if rule.get("parent"):
+                parent = expand(rule["parent"], ns)
+                check_exists(parent, unified, "the unifying ontology")
+                tele.add((cls, RDFS.subClassOf, parent))
+        else:
+            print(f"  [ERROR] unknown class operation '{op}' for {rule['class']}")
+            sys.exit(1)
+
+    for rule in alignment.get("properties", []):
+        prop = expand(rule["property"], ns)
+        check_exists(prop, source, f"the {name} ontology")
+        for kind in (OWL.ObjectProperty, OWL.DatatypeProperty):
+            if (prop, RDF.type, kind) in source:
+                tele.add((prop, RDF.type, kind))
+        op = rule["operation"]
+        if op == "equivalent":
+            tele.add((prop, OWL.equivalentProperty, expand(rule["target"], ns)))
+        elif op == "extend":
+            copy_declaration(prop, source, tele, [RDFS.domain, RDFS.range, RDFS.label])
+        else:
+            print(f"  [ERROR] unknown property operation '{op}' for {rule['property']}")
+            sys.exit(1)
+
+    for prefix, uri in ns.items():
+        tele.bind(prefix, uri, replace=True)
+
+
+def build_teleontology() -> Graph:
+    unified = Graph()
+    unified.parse(UNIFIED_ONTOLOGY)
+    tele = Graph()
+    tele.add((URIRef("http://knowdive.disi.unitn.it/trentino-teleontology"), RDF.type, OWL.Ontology))
+    files = sorted(glob.glob("alignment_*.yaml"))
+    for path in files:
+        print(f"  alignment: {path}")
+        add_alignment(tele, load_yaml(path), unified)
+    # the coordinate properties used by the OSM source KG
+    tele.add((GEO.lat, RDF.type, OWL.DatatypeProperty))
+    tele.add((GEO.long, RDF.type, OWL.DatatypeProperty))
+    tele.bind("geo", GEO, replace=True)
+    return tele
+
+
+def main() -> None:
+    cfg = load_yaml(OSM_CONFIG)
+    try:
+        raw = pd.read_pickle(RAW_DATA)
+    except FileNotFoundError:
+        print(f"[ERROR] {RAW_DATA} not found. Run 1_extraction.py first.")
+        sys.exit(1)
+
+    print("Building the OSM source KG...")
+    osm_kg = build_osm_kg(raw, cfg)
+    osm_kg.serialize(destination=OSM_OUTPUT, format="turtle", encoding="utf-8")
+    print(f"OSM source KG saved to {OSM_OUTPUT} ({len(osm_kg)} triples)")
+
+    print("Building the teleontology...")
+    tele = build_teleontology()
+    tele.serialize(destination=TELEONTOLOGY_OUTPUT, format="turtle", encoding="utf-8")
+    print(f"Teleontology saved to {TELEONTOLOGY_OUTPUT} ({len(tele)} triples)")
+
 
 if __name__ == "__main__":
     main()
