@@ -1,40 +1,61 @@
-# Trentino KG Ingestion (iTelos Approach)
+# Trentino KG Ingestion (iTelos approach)
 
-This repository contains the scripts for the automated extraction, mapping, and semantic alignment of a Knowledge Graph (KG) starting from OpenStreetMap (OSM) data. The system strictly applies the **iTelos methodology**, utilizing a modular pipeline to formally separate data extraction, Source KG generation (Reference Context), and Entity Unification (Personal Context).
+Pipeline that integrates two knowledge graphs about Trentino into one unified KG:
 
-## Repository Contents
+* **OSM**: points of interest extracted from OpenStreetMap (2 km around the centre of Trento).
+* **KGE**: the "Trentino tourist facilities" KG of the Knowledge Graph Engineering course
+  (restaurants, hotels, museums, stops, ... and six tourists such as Germano Rossi).
 
-### Core Pipeline (iTelos Layers)
-To maximize data reusability, ensure URI provenance, and avoid redundant API calls, the execution is split into three independent stages:
+Each source keeps its own ontology and its original URIs. The two ontologies are aligned
+through a **teleontology** built on the unifying ontology (`OSM-GTFS-zzz.owl`, space and time),
+and the entities that describe the same real-world thing are linked with `owl:sameAs`.
 
-* `1_extraction.py`: Handles the extraction of raw geographic data via OSMnx based on predefined filters. Saves the output locally as a serialized dataframe (`raw_osm_data.pkl`).
-* `2_mapping.py`: Generates the **Source Knowledge Graph** (`source_kg.nt`). It reads the raw data and maps it strictly using the source OSM ontology, preserving the original OSM URIs (e.g., `http://osm.kg/...`) to guarantee data provenance.
-* `3_unification.py`: Performs **Ontology Alignment and Entity Unification**. It implements strict semantic equivalence: rather than directly linking the user to physical nodes, it matches places from the Personal Context (`tourist_profile.ttl`) with the Reference Context (OSM) using the `owl:sameAs` property. Outputs the final `final_unified_kg.nt`.
-* `run_pipeline.py`: Master script for automated, sequential execution of the entire pipeline.
+## Pipeline
 
-### Ontologies & Configuration
-To support inference and the alignment process, the following ontology files are utilized:
-* `OSM-GTFS-zzz.owl` (or equivalent source ontology): Defines the base classes (e.g., `openstreetmap_place`) and data properties for the Source KG.
-* `teleontology.ttl`: The Unified Ontology. Defines the generalized class hierarchy (Reference Context) and anchors it to the OSM classes via `rdfs:subClassOf` to automatically inherit spatial properties.
-* `teleology.ttl`: Defines the Personal Context (`app:Tourist`), along with the strictly typed domains and ranges for teleological Object Properties (`app:isAt`, `app:eatsAt`, etc.).
-* `tourist_profile.ttl`: Contains the actual physical data of the user (`app:Tourist`) and their personal instances of places. 
-* `mapping.yaml`: Declarative configuration file for schema-driven mapping.
+| Stage | Script | Reads | Produces |
+|---|---|---|---|
+| 1 | `1_extraction.py` | `osm_source.yaml`, OpenStreetMap | `raw_osm_data.pkl` |
+| 1 | `1_extraction_kge.py` | `kge_source.yaml`, `kge_data/*.csv` | `kge_kg.ttl` |
+| 2 | `2_mapping.py` | `raw_osm_data.pkl`, `osm_source.yaml`, `alignment_*.yaml` | `osm_kg.ttl`, `teleontology.ttl` |
+| 3 | `3_unification.py` | `unification.yaml` and the files above | `unified_kg.ttl`, `unification_report.csv` |
 
-### Generated Artifacts (Local Only)
-Data files are excluded from version control via `.gitignore` due to size and generation frequency:
-* `raw_osm_data.pkl`: Intermediate binary file.
-* `source_kg.nt`: Pure OSM Source Graph.
-* `final_unified_kg.nt`: Final unified Knowledge Graph.
+`run_pipeline.py` runs the stages in order and stops at the first error.
+`python run_pipeline.py --skip-download` reuses `raw_osm_data.pkl` instead of querying OSM again.
 
-## Execution Flow
+### Stage 1: extraction
+* **OSM**: downloads with osm2kg the elements with the tags listed in `osm_source.yaml`.
+* **KGE**: the course repository has the final datasets as CSV but not the RDF graph (built
+  with Karma), so the script rebuilds it from `kge_data/` with the classes and properties of
+  the KGE ontology (`kge_ontology.owl`). Tourists are linked to their places by exact name.
 
-To successfully build and query the Knowledge Graph:
+### Stage 2: mapping
+* **OSM source KG**: every element gets its original URI (`https://www.openstreetmap.org/node/<id>`,
+  `way/<id>`, `relation/<id>`) and the class of the OSM ontology chosen by `osm_source.yaml`
+  (e.g. `osm_ont:restaurant`). The OSM ontology is the unifying ontology, so these types need no
+  further mapping. The centroid of the geometry is stored as `geo:lat` / `geo:long`.
+* **Teleontology**: built from `alignment_kge.yaml`. Class operations: `subclass_of` (perfect
+  correspondence, e.g. `etype:restaurant ⊑ osm_ont:restaurant`), `superclass_of` (the KGE class is
+  broader, e.g. `osm_ont:bar, osm_ont:pub, osm_ont:cafe ⊑ etype:bar_pub`) and `extend` (concepts the
+  unifying ontology does not have, e.g. `etype:tourist`). Property operations: `equivalent`
+  (e.g. `etype:has_name ≡ osm_ont:name`) and `extend`.
 
-1. **Automated Pipeline Execution:** Run the master script to generate the final N-Triples by executing: python run_pipeline.py
+### Stage 3: unification
+Two entities are candidates only if their types are compatible in unifying ontology + teleontology
+(one equal to or subclass of the other); this filter is always on. Then, as configured in
+`unification.yaml`:
+* **name**: normalized Levenshtein similarity ≥ `min_similarity`, after an optional normalization
+  (accents, punctuation, generic words such as "hotel" or "ristorante");
+* **coordinates**: distance ≤ `max_distance_m`.
 
-2. **GraphDB Setup:** In GraphDB, go to Import -> RDF and upload the complete suite to enable full inference:
-   * `OSM-GTFS-zzz.owl`
-   * `teleontology.ttl`
-   * `teleology.ttl`
-   * `tourist_profile.ttl`
-   * `final_unified_kg.nt`
+Each primitive can be switched on or off; every enabled primitive must hold. With `one_to_one`
+each entity keeps only its best candidate. The name and coordinate properties of each source are
+found through the teleontology (all properties equivalent to `osm_ont:name`, `geo:lat`, `geo:long`).
+`unification_report.csv` lists every link with its similarity and distance.
+
+## Requirements
+Python 3 with `osm2kg`, `pandas`, `geopandas`, `pyyaml`, `rdflib`. Optional: `rapidfuzz`
+(faster Levenshtein, same results).
+
+## GraphDB
+Import `OSM-GTFS-zzz.owl`, `kge_ontology.owl`, `teleontology.ttl` and `unified_kg.ttl`.
+Generated files are not versioned (see `.gitignore`).
