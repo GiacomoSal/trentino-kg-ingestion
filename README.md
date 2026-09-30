@@ -53,8 +53,12 @@ found through the teleontology (all properties equivalent to `osm_ont:name`, `ge
 `unification_report.csv` lists every link with its similarity and distance.
 
 ## Requirements
-Python 3 with `osm2kg`, `pandas`, `geopandas`, `pyyaml`, `rdflib`. Optional: `rapidfuzz`
-(faster Levenshtein, same results).
+Python 3 with the packages in `requirements.txt`, plus `osm2kg` installed from its local folder:
+
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+    pip install -e /path/to/osm2kg-main
 
 ## GraphDB
 Import `OSM-GTFS-zzz.owl`, `kge_ontology.owl`, `teleontology.ttl` and `unified_kg.ttl`.
