@@ -1,0 +1,62 @@
+# KGE source ("Trentino tourist facilities", Knowledge Graph Engineering 2022/23).
+# The course repository holds the final datasets as CSV (Datasets/Data Integration)
+# and the ontology (Teleologies/Formal Modeling/teleont-formal.owl -> kge_ontology.owl),
+# but not the RDF graph, which was built with Karma. 1_extraction_kge.py rebuilds it
+# from the CSVs using the classes and properties of that ontology.
+
+csv_dir: "kge_data"
+base_uri: "http://knowdive.disi.unitn.it/kge-tourist-facilities/"
+
+namespaces:
+  etype: "http://knowdive.disi.unitn.it/etype#"
+
+# CSV file -> class of the KGE ontology. Every row becomes an entity whose URI is
+# base_uri + the value of the "id" column.
+places:
+  - {file: "restaurant2.csv", class: "etype:restaurant"}
+  - {file: "bars_pubs2.csv", class: "etype:bar_pub"}
+  - {file: "hotel2.csv", class: "etype:hotel"}
+  - {file: "holiday_house2.csv", class: "etype:holiday_house"}
+  - {file: "campsite2.csv", class: "etype:campsite"}
+  - {file: "museum.csv", class: "etype:museum"}
+  - {file: "natural_attractions2.csv", class: "etype:natural_atraction"}
+  - {file: "amusement_park2.csv", class: "etype:amusement_park"}
+  - {file: "skiing_infrastructure2.csv", class: "etype:skiing_infrastructure"}
+  - {file: "localAndSouvenir.csv", class: "etype:local_souvenir"}
+  - {file: "gas_station.csv", class: "etype:gas_station"}
+  - {file: "taxi_company.csv", class: "etype:taxi_company"}
+  - {file: "bus.csv", class: "etype:bus_stop"}
+  - {file: "train_stations2.csv", class: "etype:train_station"}
+  - {file: "bike_stations.csv", class: "etype:bicycle_station"}
+
+# CSV column (case-insensitive) -> data property, with its datatype
+place_columns:
+  name: {property: "etype:has_name", datatype: "string"}
+  latitude: {property: "etype:has_latitude", datatype: "float"}
+  longitude: {property: "etype:has_longitude", datatype: "float"}
+  city: {property: "etype:has_city", datatype: "string"}
+  address: {property: "etype:has_address", datatype: "string"}
+  phone_number: {property: "etype:has_phone", datatype: "string"}
+
+# Columns starting with this prefix (n_bus, n_bike, n_barpub, ...) hold the id of the
+# nearest entity of another dataset: they become has_Near links, as in the original KG
+near:
+  column_prefix: "n_"
+  property: "etype:has_Near"
+
+people:
+  file: "personas.csv"
+  class: "etype:tourist"
+  columns:
+    name: {property: "etype:has_name", datatype: "string"}
+    surname: {property: "etype:has_surname", datatype: "string"}
+    age: {property: "etype:has_age", datatype: "int"}
+  # The CSV names the places a tourist uses; the place is looked up by exact name
+  # among the entities of the listed classes and linked with the object property.
+  relations:
+    accommodation: {property: "etype:has_BookPlace", classes: ["etype:hotel", "etype:holiday_house", "etype:campsite"]}
+    eating: {property: "etype:has_EatAt", classes: ["etype:restaurant"]}
+    drinking_out: {property: "etype:has_DrinkAt", classes: ["etype:bar_pub"]}
+    visit: {property: "etype:has_Visit", classes: ["etype:museum", "etype:natural_atraction"]}
+    shopping: {property: "etype:has_shopFrom", classes: ["etype:local_souvenir"]}
+    taxi_call: {property: "etype:has_ReserveTaxi", classes: ["etype:taxi_company"]}
