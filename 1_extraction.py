@@ -3,8 +3,8 @@ import yaml
 import pandas as pd
 import osm2kg as og
 
-def load_tags_from_yaml(filepath="mapping.yaml"):
-    """Reads mapping.yaml and dynamically builds the tags dictionary for OSM extraction."""
+def load_tags_from_yaml(filepath="osm_source.yaml"):
+    """Reads osm_source.yaml and dynamically builds the tags dictionary for OSM extraction."""
     if not os.path.exists(filepath):
         print(f"[WARNING] {filepath} not found. Using default restaurant tags.")
         return {'amenity': ['restaurant']}
@@ -33,7 +33,7 @@ def main():
     centro_trento = (46.0678, 11.1211)
     raggio_metri = 2000
 
-    print("Parsing dynamic tags from mapping.yaml...")
+    print("Parsing dynamic tags from osm_source.yaml...")
     tags_to_download = load_tags_from_yaml()
     print(f"Tags to extract: {tags_to_download}")
 
