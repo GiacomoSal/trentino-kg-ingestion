@@ -1,0 +1,49 @@
+# Entity unification between two source KGs.
+# Two entities are candidates only if their types are compatible in the unifying
+# ontology plus the teleontology (one type is equal to or a subclass of the other).
+# This filter is always on. On top of it, the primitives below can be switched on
+# or off independently; every enabled primitive must hold.
+
+unified_ontology: "OSM-GTFS-zzz.owl"
+teleontology: "teleontology.ttl"
+
+sources:
+  kge: "kge_kg.ttl"
+  osm: "osm_kg.ttl"
+
+# owl:sameAs links go from the entities of "from" to those of "to"
+link:
+  from: "kge"
+  to: "osm"
+
+namespaces:
+  osm_ont: "http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#"
+  geo: "http://www.w3.org/2003/01/geo/wgs84_pos#"
+
+# Properties of the unifying ontology the primitives read. For each source the script
+# also uses every property declared equivalent to these in the teleontology.
+name_property: "osm_ont:name"
+latitude_property: "geo:lat"
+longitude_property: "geo:long"
+
+primitives:
+  name:
+    enabled: true
+    # normalized Levenshtein similarity (1 = same name after normalization), from 0 to 1
+    min_similarity: 0.8
+    # applied to both names before comparing them; set the options to false / [] to disable
+    normalization:
+      strip_accents: true      # "Chistè" -> "chiste"
+      strip_punctuation: true  # "Accademia ****" -> "accademia"
+      # generic words that describe the kind of place rather than naming it
+      ignore_words: ["hotel", "albergo", "garni", "ristorante", "pizzeria", "trattoria",
+                     "osteria", "bar", "museo"]
+  coordinates:
+    enabled: true
+    max_distance_m: 50
+
+# Each entity is linked to at most one entity of the other source (the best candidate)
+one_to_one: true
+
+output: "unified_kg.ttl"
+report: "unification_report.csv"
