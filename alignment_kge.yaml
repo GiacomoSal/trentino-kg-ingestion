@@ -1,16 +1,14 @@
 # Alignment of the KGE ontology to the unifying ontology (OSM-GTFS-zzz.owl).
-# 2_mapping.py turns these rules into teleontology.ttl. The entities keep their
-# original KGE types; the link between types lives only in the teleontology.
+# 2_mapping.py turns these rules into teleontology.ttl.
 #
-# Class operations
-#   subclass_of    the KGE class is a child of a unified class (perfect correspondence)
-#   superclass_of  the KGE class is broader: the listed unified classes become its
-#                  children, and "parent" (optional) places it in the unified hierarchy
-#   extend         the unified ontology (space and time) has no such concept: the class
-#                  is added to the teleontology as it is, optionally under "parent"
-# Property operations
-#   equivalent     owl:equivalentProperty with a property of the unified ontology
-#   extend         added to the teleontology with its domain and range
+# The entities keep the types of the KGE graph: the teleology keeps the classes and
+# properties of each source graph, and the teleontology only connects them to the
+# unifying ontology. Two operations, for classes and properties alike:
+#   equivalent  same concept as the unified term
+#   child_of    narrower than the unified term (rdfs:subClassOf / rdfs:subPropertyOf)
+# Classes and properties not listed here (e.g. etype:tourist, etype:has_EatAt) are not
+# mapped: the unifying ontology covers space and time, and they stay as defined in the
+# KGE ontology.
 
 source: "kge"
 source_ontology: "kge_ontology.owl"
@@ -21,37 +19,24 @@ namespaces:
   geo: "http://www.w3.org/2003/01/geo/wgs84_pos#"
 
 classes:
-  - {class: "etype:restaurant", operation: "subclass_of", target: "osm_ont:restaurant"}
-  - {class: "etype:hotel", operation: "subclass_of", target: "osm_ont:hotel"}
-  - {class: "etype:campsite", operation: "subclass_of", target: "osm_ont:camp_site"}
-  - {class: "etype:museum", operation: "subclass_of", target: "osm_ont:museum"}
-  - {class: "etype:amusement_park", operation: "subclass_of", target: "osm_ont:theme_park"}
-  - {class: "etype:gas_station", operation: "subclass_of", target: "osm_ont:fuel"}
-  - {class: "etype:bus_stop", operation: "subclass_of", target: "osm_ont:bus_stop"}
-  - {class: "etype:bicycle_station", operation: "subclass_of", target: "osm_ont:bicycle_rental"}
-  # In Italy many bars are mapped in OSM as amenity=cafe
-  - {class: "etype:bar_pub", operation: "superclass_of", targets: ["osm_ont:bar", "osm_ont:pub", "osm_ont:cafe"], parent: "osm_ont:catering"}
-  - {class: "etype:train_station", operation: "superclass_of", targets: ["osm_ont:railway_station", "osm_ont:railway_halt"], parent: "osm_ont:transport"}
-  - {class: "etype:holiday_house", operation: "extend", parent: "osm_ont:accommodation"}
-  - {class: "etype:natural_atraction", operation: "extend", parent: "osm_ont:tourism"}
-  - {class: "etype:skiing_infrastructure", operation: "extend", parent: "osm_ont:tourism"}
-  - {class: "etype:local_souvenir", operation: "extend", parent: "osm_ont:shopping"}
-  - {class: "etype:taxi_company", operation: "extend"}
-  - {class: "etype:tourist", operation: "extend"}
+  - {class: "etype:restaurant", operation: "child_of", target: "osm_ont:restaurant"}
+  - {class: "etype:hotel", operation: "child_of", target: "osm_ont:hotel"}
+  - {class: "etype:campsite", operation: "child_of", target: "osm_ont:camp_site"}
+  - {class: "etype:museum", operation: "child_of", target: "osm_ont:museum"}
+  - {class: "etype:amusement_park", operation: "child_of", target: "osm_ont:theme_park"}
+  - {class: "etype:gas_station", operation: "child_of", target: "osm_ont:fuel"}
+  - {class: "etype:bus_stop", operation: "child_of", target: "osm_ont:bus_stop"}
+  - {class: "etype:bicycle_station", operation: "child_of", target: "osm_ont:bicycle_rental"}
+  - {class: "etype:train_station", operation: "child_of", target: "osm_ont:railway_station"}
+  # No OSM class matches these exactly: they go under the closest broader class.
+  # Their entities are therefore not compared with OSM bars, pubs, cafes, ...
+  - {class: "etype:bar_pub", operation: "child_of", target: "osm_ont:catering"}
+  - {class: "etype:holiday_house", operation: "child_of", target: "osm_ont:accommodation"}
+  - {class: "etype:natural_atraction", operation: "child_of", target: "osm_ont:tourism"}
+  - {class: "etype:skiing_infrastructure", operation: "child_of", target: "osm_ont:tourism"}
+  - {class: "etype:local_souvenir", operation: "child_of", target: "osm_ont:shopping"}
 
 properties:
   - {property: "etype:has_name", operation: "equivalent", target: "osm_ont:name"}
   - {property: "etype:has_latitude", operation: "equivalent", target: "geo:lat"}
   - {property: "etype:has_longitude", operation: "equivalent", target: "geo:long"}
-  - {property: "etype:has_city", operation: "extend"}
-  - {property: "etype:has_address", operation: "extend"}
-  - {property: "etype:has_phone", operation: "extend"}
-  - {property: "etype:has_surname", operation: "extend"}
-  - {property: "etype:has_age", operation: "extend"}
-  - {property: "etype:has_BookPlace", operation: "extend"}
-  - {property: "etype:has_EatAt", operation: "extend"}
-  - {property: "etype:has_DrinkAt", operation: "extend"}
-  - {property: "etype:has_Visit", operation: "extend"}
-  - {property: "etype:has_shopFrom", operation: "extend"}
-  - {property: "etype:has_ReserveTaxi", operation: "extend"}
-  - {property: "etype:has_Near", operation: "extend"}

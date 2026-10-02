@@ -6,12 +6,13 @@ a) Builds the OSM source KG (osm_kg.ttl) from the data extracted in stage 1. Eac
    ontology, so these types need no further mapping.
 b) Builds the teleontology (teleontology.ttl) from the alignment files
    (alignment_*.yaml): the axioms that connect the types and properties of the
-   other sources to the unifying ontology, plus the concepts they add to it.
-   The entities keep their original types: the alignment lives only here.
+   other sources to the unifying ontology. The entities keep the types of their
+   own graph, so the teleology keeps the diversity of the sources; the alignment
+   lives only here.
 """
 import glob
 import sys
-from typing import Iterable, Optional, Tuple
+from typing import Optional, Tuple
 
 import pandas as pd
 from rdflib import Graph, Literal, Namespace, URIRef
@@ -106,58 +107,35 @@ def check_exists(term: URIRef, ontology: Graph, where: str) -> None:
         print(f"  [WARNING] {term} is not defined in {where}")
 
 
-def copy_declaration(term: URIRef, source: Graph, target: Graph, predicates: Iterable) -> None:
-    for predicate in predicates:
-        for value in source.objects(term, predicate):
-            target.add((term, predicate, value))
-
-
 def add_alignment(tele: Graph, alignment: dict, unified: Graph) -> None:
+    """Adds the axioms of one alignment file to the teleontology.
+
+    Only two operations exist, for classes and properties alike:
+      equivalent  owl:equivalentClass / owl:equivalentProperty with a unified term
+      child_of    rdfs:subClassOf / rdfs:subPropertyOf a unified term
+    Classes and properties without a rule are not mapped: the entities keep them,
+    as defined in the source ontology.
+    """
     ns = alignment["namespaces"]
     source = Graph()
     source.parse(alignment["source_ontology"])
     name = alignment["source"]
+    axioms = {
+        "classes": {"equivalent": OWL.equivalentClass, "child_of": RDFS.subClassOf},
+        "properties": {"equivalent": OWL.equivalentProperty, "child_of": RDFS.subPropertyOf},
+    }
 
-    for rule in alignment.get("classes", []):
-        cls = expand(rule["class"], ns)
-        check_exists(cls, source, f"the {name} ontology")
-        tele.add((cls, RDF.type, OWL.Class))
-        copy_declaration(cls, source, tele, [RDFS.label, RDFS.comment])
-        op = rule["operation"]
-        if op == "subclass_of":
+    for section, key in (("classes", "class"), ("properties", "property")):
+        for rule in alignment.get(section, []):
+            term = expand(rule[key], ns)
             target = expand(rule["target"], ns)
+            predicate = axioms[section].get(rule["operation"])
+            if predicate is None:
+                print(f"  [ERROR] unknown operation '{rule['operation']}' for {rule[key]}")
+                sys.exit(1)
+            check_exists(term, source, f"the {name} ontology")
             check_exists(target, unified, "the unifying ontology")
-            tele.add((cls, RDFS.subClassOf, target))
-        elif op == "superclass_of":
-            for t in rule["targets"]:
-                target = expand(t, ns)
-                check_exists(target, unified, "the unifying ontology")
-                tele.add((target, RDFS.subClassOf, cls))
-            if rule.get("parent"):
-                tele.add((cls, RDFS.subClassOf, expand(rule["parent"], ns)))
-        elif op == "extend":
-            if rule.get("parent"):
-                parent = expand(rule["parent"], ns)
-                check_exists(parent, unified, "the unifying ontology")
-                tele.add((cls, RDFS.subClassOf, parent))
-        else:
-            print(f"  [ERROR] unknown class operation '{op}' for {rule['class']}")
-            sys.exit(1)
-
-    for rule in alignment.get("properties", []):
-        prop = expand(rule["property"], ns)
-        check_exists(prop, source, f"the {name} ontology")
-        for kind in (OWL.ObjectProperty, OWL.DatatypeProperty):
-            if (prop, RDF.type, kind) in source:
-                tele.add((prop, RDF.type, kind))
-        op = rule["operation"]
-        if op == "equivalent":
-            tele.add((prop, OWL.equivalentProperty, expand(rule["target"], ns)))
-        elif op == "extend":
-            copy_declaration(prop, source, tele, [RDFS.domain, RDFS.range, RDFS.label])
-        else:
-            print(f"  [ERROR] unknown property operation '{op}' for {rule['property']}")
-            sys.exit(1)
+            tele.add((term, predicate, target))
 
     for prefix, uri in ns.items():
         tele.bind(prefix, uri, replace=True)
@@ -166,6 +144,9 @@ def add_alignment(tele: Graph, alignment: dict, unified: Graph) -> None:
 def build_teleontology() -> Graph:
     unified = Graph()
     unified.parse(UNIFIED_ONTOLOGY)
+    # the OSM source KG stores coordinates with WGS84 geo:lat / geo:long
+    for prop in (GEO.lat, GEO.long):
+        unified.add((prop, RDF.type, OWL.DatatypeProperty))
     tele = Graph()
     tele.add((URIRef("http://knowdive.disi.unitn.it/trentino-teleontology"), RDF.type, OWL.Ontology))
     files = sorted(glob.glob("alignment_*.yaml"))
