@@ -29,6 +29,12 @@ longitude_property: "geo:long"
 primitives:
   name:
     enabled: true
+    # "levenshtein": similarity of the whole names
+    # "partial": similarity of the shorter name with the most similar part of the longer
+    #            one ("FORST" vs "Forsterbräu Trento" -> 1.0)
+    method: "partial"
+    # with "partial", names shorter than this are compared as whole names
+    partial_min_length: 4
     # normalized Levenshtein similarity (1 = same name after normalization), from 0 to 1
     min_similarity: 0.8
     # applied to both names before comparing them; set the options to false / [] to disable
@@ -40,7 +46,9 @@ primitives:
                      "osteria", "bar", "museo"]
   coordinates:
     enabled: true
-    max_distance_m: 50
+    # OSM stores large buildings as polygons and the point used is their centroid,
+    # which can be far from the point of the other source (MUSE: 78 m)
+    max_distance_m: 100
 
 # Each entity is linked to at most one entity of the other source (the best candidate)
 one_to_one: true
