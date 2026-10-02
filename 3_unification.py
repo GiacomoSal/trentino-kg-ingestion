@@ -8,7 +8,9 @@ URI and type, so provenance is preserved.
    compatible in the unifying ontology plus the teleontology, i.e. one type is
    equal to or a subclass of the other.
 2. Primitives (each can be switched on or off in unification.yaml):
-   - name: normalized Levenshtein similarity of the names >= min_similarity
+   - name: Levenshtein similarity of the names >= min_similarity, either on the
+     whole names ("levenshtein") or between the shorter name and the most
+     similar part of the longer one ("partial")
    - coordinates: distance between the two points <= max_distance_m
    Every enabled primitive must hold.
 3. If one_to_one is set, each entity keeps only its best candidate.
@@ -73,6 +75,35 @@ def name_similarity(a: str, b: str) -> float:
     """Normalized Levenshtein similarity of two already normalized names."""
     longest = max(len(a), len(b))
     return 1.0 if longest == 0 else 1.0 - levenshtein(a, b) / longest
+
+
+def partial_similarity(a: str, b: str, min_similarity: float = 0.0, min_length: int = 4) -> float:
+    """Levenshtein similarity between the shorter name and the most similar part of the longer.
+
+    "forst" vs "forsterbrau trento" -> 1.0, because "forst" appears in the longer name.
+    Semi-global edit distance: the shorter name may start and end anywhere in the longer.
+    Names shorter than min_length are compared as whole names.
+    Returns 0.0 when the similarity is below min_similarity.
+    """
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    if len(short) < min_length:
+        # a very short name ("duo", "nh") fits inside too many others: compare whole names
+        return name_similarity(a, b)
+    max_dist = int((1.0 - min_similarity) * len(short))
+    # column-wise DP over the shorter name; row 0 is all zeros (free start in the longer name)
+    column = list(range(len(short) + 1))
+    best = column[-1]
+    for cl in long_:
+        new = [0]
+        for i, cs in enumerate(short, 1):
+            new.append(min(column[i] + 1, new[i - 1] + 1, column[i - 1] + (cs != cl)))
+        column = new
+        best = min(best, column[-1])
+        if best == 0:
+            break
+    if best > max_dist:
+        return 0.0
+    return 1.0 - best / len(short)
 
 
 def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -177,6 +208,11 @@ def main() -> None:
     min_sim = float(prim["name"]["min_similarity"])
     max_dist = float(prim["coordinates"]["max_distance_m"])
     NORMALIZATION.update(prim["name"].get("normalization") or {})
+    method = prim["name"].get("method", "levenshtein")
+    partial_min_length = int(prim["name"].get("partial_min_length", 4))
+    if method not in ("levenshtein", "partial"):
+        print(f"[ERROR] unknown name method '{method}'")
+        sys.exit(1)
 
     schema_graph = Graph()
     schema_graph.parse(cfg["unified_ontology"])
@@ -230,10 +266,13 @@ def main() -> None:
                         if not a.name or not b.name:
                             continue
                         na, nb = normalize(a.name), normalize(b.name)
-                        # cheap bound: the length difference alone can exclude the pair
-                        if 1 - abs(len(na) - len(nb)) / max(len(na), len(nb), 1) < min_sim:
-                            continue
-                        sim = name_similarity(na, nb)
+                        if method == "partial":
+                            sim = partial_similarity(na, nb, min_sim, partial_min_length)
+                        else:
+                            # cheap bound: the length difference alone can exclude the pair
+                            if 1 - abs(len(na) - len(nb)) / max(len(na), len(nb), 1) < min_sim:
+                                continue
+                            sim = name_similarity(na, nb)
                         if sim < min_sim:
                             continue
                     # higher is better: name similarity, then closeness
@@ -266,7 +305,17 @@ def main() -> None:
             w.writerow([a.uri, a.name, b.uri, b.name,
                         "" if sim is None else f"{sim:.2f}", "" if dist is None else f"{dist:.1f}"])
 
+    # collisions: entities with more than one candidate before the one-to-one choice
+    per_left, per_right = defaultdict(int), defaultdict(int)
+    for _, a, b, _, _ in candidates:
+        per_left[a.uri] += 1
+        per_right[b.uri] += 1
+    collisions_left = sum(1 for n in per_left.values() if n > 1)
+    collisions_right = sum(1 for n in per_right.values() if n > 1)
+
     print(f"Type-compatible pairs: {type_pairs}, passing the primitives: {len(candidates)}")
+    print(f"Collisions (entities with more than one candidate): "
+          f"{cfg['link']['from']} {collisions_left}, {cfg['link']['to']} {collisions_right}")
     print(f"owl:sameAs links: {len(links)} -> {cfg['output']} (details in {cfg['report']})")
 
 
