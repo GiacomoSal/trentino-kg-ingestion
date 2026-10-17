@@ -1,8 +1,10 @@
-"""Stage 3: entity unification.
+"""Stage 3: entity unification (generic).
 
-Finds the entities of two source KGs that describe the same real-world thing and
-links them with owl:sameAs. Both entities stay in the graph with their original
-URI and type, so provenance is preserved.
+Reads the source KGs listed in pipeline.yaml and, for every pair of sources listed
+under "links" in unification.yaml, finds the entities that describe the same
+real-world thing and links them with owl:sameAs. The output is the entity graph:
+the entities of all sources, unchanged (original URI and type, so provenance is
+preserved), plus the owl:sameAs links.
 
 1. Type filter (always on): two entities are candidates only if their types are
    compatible in the unifying ontology plus the teleontology, i.e. one type is
@@ -31,6 +33,7 @@ from rdflib.namespace import OWL, RDF, RDFS
 
 from kg_utils import expand, load_yaml
 
+PIPELINE = "pipeline.yaml"
 CONFIG = "unification.yaml"
 
 try:  # optional, much faster; the pure Python version gives the same results
@@ -198,44 +201,26 @@ def read_entities(graph: Graph, name_props, lat_props, lon_props) -> List[Entity
 
 # ---------------------------------------------------------------- main
 
-def main() -> None:
-    # an alternative config file can be passed on the command line (for experiments)
-    cfg = load_yaml(sys.argv[1] if len(sys.argv) > 1 else CONFIG)
-    ns = cfg["namespaces"]
-    prim = cfg["primitives"]
-    use_name = prim["name"]["enabled"]
-    use_coords = prim["coordinates"]["enabled"]
-    min_sim = float(prim["name"]["min_similarity"])
-    max_dist = float(prim["coordinates"]["max_distance_m"])
-    NORMALIZATION.update(prim["name"].get("normalization") or {})
-    method = prim["name"].get("method", "levenshtein")
-    partial_min_length = int(prim["name"].get("partial_min_length", 4))
-    if method not in ("levenshtein", "partial"):
-        print(f"[ERROR] unknown name method '{method}'")
-        sys.exit(1)
+class Settings:
+    """Primitive settings read from unification.yaml."""
 
-    schema_graph = Graph()
-    schema_graph.parse(cfg["unified_ontology"])
-    schema_graph.parse(cfg["teleontology"])
-    schema = Schema(schema_graph)
-    name_props = schema.property_family(expand(cfg["name_property"], ns))
-    lat_props = schema.property_family(expand(cfg["latitude_property"], ns))
-    lon_props = schema.property_family(expand(cfg["longitude_property"], ns))
+    def __init__(self, cfg: dict):
+        prim = cfg["primitives"]
+        self.use_name = prim["name"]["enabled"]
+        self.use_coords = prim["coordinates"]["enabled"]
+        self.min_sim = float(prim["name"]["min_similarity"])
+        self.max_dist = float(prim["coordinates"]["max_distance_m"])
+        self.method = prim["name"].get("method", "levenshtein")
+        self.partial_min_length = int(prim["name"].get("partial_min_length", 4))
+        self.one_to_one = cfg.get("one_to_one", True)
+        NORMALIZATION.update(prim["name"].get("normalization") or {})
+        if self.method not in ("levenshtein", "partial"):
+            print(f"[ERROR] unknown name method '{self.method}'")
+            sys.exit(1)
 
-    graphs = {}
-    for key, path in cfg["sources"].items():
-        g = Graph()
-        g.parse(path)
-        graphs[key] = g
-    left = read_entities(graphs[cfg["link"]["from"]], name_props, lat_props, lon_props)
-    right = read_entities(graphs[cfg["link"]["to"]], name_props, lat_props, lon_props)
 
-    enabled = [p for p, on in (("name", use_name), ("coordinates", use_coords)) if on]
-    print(f"Entities: {cfg['link']['from']} {len(left)}, {cfg['link']['to']} {len(right)}")
-    print(f"Filters: type (always) + {', '.join(enabled) if enabled else 'no primitive'}")
-    if not enabled:
-        print("[WARNING] no primitive enabled: every type-compatible pair would be linked")
-
+def link_sources(left: List[Entity], right: List[Entity], schema: Schema, st: Settings):
+    """Candidates and chosen links between the entities of two sources."""
     # group the right side by type to avoid comparing incompatible entities
     right_by_type: Dict[URIRef, List[Entity]] = defaultdict(list)
     for e in right:
@@ -256,67 +241,105 @@ def main() -> None:
                     seen.add(b.uri)
                     type_pairs += 1
                     dist = sim = None
-                    if use_coords:
+                    if st.use_coords:
                         if None in (a.lat, a.lon, b.lat, b.lon):
                             continue
                         dist = distance_m(a.lat, a.lon, b.lat, b.lon)
-                        if dist > max_dist:
+                        if dist > st.max_dist:
                             continue
-                    if use_name:
+                    if st.use_name:
                         if not a.name or not b.name:
                             continue
                         na, nb = normalize(a.name), normalize(b.name)
-                        if method == "partial":
-                            sim = partial_similarity(na, nb, min_sim, partial_min_length)
+                        if st.method == "partial":
+                            sim = partial_similarity(na, nb, st.min_sim, st.partial_min_length)
                         else:
                             # cheap bound: the length difference alone can exclude the pair
-                            if 1 - abs(len(na) - len(nb)) / max(len(na), len(nb), 1) < min_sim:
+                            if 1 - abs(len(na) - len(nb)) / max(len(na), len(nb), 1) < st.min_sim:
                                 continue
                             sim = name_similarity(na, nb)
-                        if sim < min_sim:
+                        if sim < st.min_sim:
                             continue
                     # higher is better: name similarity, then closeness
-                    score = (sim if sim is not None else 0.0) + (1 - dist / max_dist if dist is not None else 0.0)
+                    score = (sim if sim is not None else 0.0) + (1 - dist / st.max_dist if dist is not None else 0.0)
                     candidates.append((score, a, b, sim, dist))
 
     candidates.sort(key=lambda c: -c[0])
     links, used_left, used_right = [], set(), set()
     for score, a, b, sim, dist in candidates:
-        if cfg.get("one_to_one", True) and (a.uri in used_left or b.uri in used_right):
+        if st.one_to_one and (a.uri in used_left or b.uri in used_right):
             continue
         used_left.add(a.uri)
         used_right.add(b.uri)
         links.append((a, b, sim, dist))
-
-    unified = Graph()
-    for g in graphs.values():
-        unified += g
-        for prefix, uri in g.namespaces():
-            unified.bind(prefix, uri, replace=True)
-    unified.bind("owl", OWL)
-    for a, b, _, _ in links:
-        unified.add((a.uri, OWL.sameAs, b.uri))
-    unified.serialize(destination=cfg["output"], format="turtle", encoding="utf-8")
-
-    with open(cfg["report"], "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(["from_uri", "from_name", "to_uri", "to_name", "name_similarity", "distance_m"])
-        for a, b, sim, dist in sorted(links, key=lambda l: l[0].name or ""):
-            w.writerow([a.uri, a.name, b.uri, b.name,
-                        "" if sim is None else f"{sim:.2f}", "" if dist is None else f"{dist:.1f}"])
 
     # collisions: entities with more than one candidate before the one-to-one choice
     per_left, per_right = defaultdict(int), defaultdict(int)
     for _, a, b, _, _ in candidates:
         per_left[a.uri] += 1
         per_right[b.uri] += 1
-    collisions_left = sum(1 for n in per_left.values() if n > 1)
-    collisions_right = sum(1 for n in per_right.values() if n > 1)
+    collisions = (sum(1 for n in per_left.values() if n > 1), sum(1 for n in per_right.values() if n > 1))
+    return type_pairs, candidates, links, collisions
 
-    print(f"Type-compatible pairs: {type_pairs}, passing the primitives: {len(candidates)}")
-    print(f"Collisions (entities with more than one candidate): "
-          f"{cfg['link']['from']} {collisions_left}, {cfg['link']['to']} {collisions_right}")
-    print(f"owl:sameAs links: {len(links)} -> {cfg['output']} (details in {cfg['report']})")
+
+def main() -> None:
+    pipeline = load_yaml(PIPELINE)
+    # an alternative unification config can be passed on the command line (for experiments)
+    cfg = load_yaml(sys.argv[1] if len(sys.argv) > 1 else CONFIG)
+    ns = cfg["namespaces"]
+    st = Settings(cfg)
+    out = pipeline["outputs"]
+
+    schema_graph = Graph()
+    schema_graph.parse(pipeline["unified_ontology"])
+    schema_graph.parse(out["teleontology"])
+    schema = Schema(schema_graph)
+    name_props = schema.property_family(expand(cfg["name_property"], ns))
+    lat_props = schema.property_family(expand(cfg["latitude_property"], ns))
+    lon_props = schema.property_family(expand(cfg["longitude_property"], ns))
+
+    graphs, entities = {}, {}
+    for key, source in pipeline["sources"].items():
+        g = Graph()
+        g.parse(source["kg"])
+        graphs[key] = g
+        entities[key] = read_entities(g, name_props, lat_props, lon_props)
+        print(f"Source {key}: {len(entities[key])} entities")
+
+    enabled = [p for p, on in (("name", st.use_name), ("coordinates", st.use_coords)) if on]
+    print(f"Filters: type (always) + {', '.join(enabled) if enabled else 'no primitive'}")
+    if not enabled:
+        print("[WARNING] no primitive enabled: every type-compatible pair would be linked")
+
+    all_links = []
+    for pair in cfg["links"]:
+        src, dst = pair["from"], pair["to"]
+        type_pairs, candidates, links, (col_l, col_r) = link_sources(entities[src], entities[dst], schema, st)
+        print(f"{src} -> {dst}: type-compatible pairs {type_pairs}, passing the primitives {len(candidates)}")
+        print(f"  collisions (entities with more than one candidate): {src} {col_l}, {dst} {col_r}")
+        print(f"  owl:sameAs links: {len(links)}")
+        all_links += [(src, dst) + link for link in links]
+
+    # entity graph: the entities of all sources, unchanged, plus the owl:sameAs links
+    entity_graph = Graph()
+    for g in graphs.values():
+        entity_graph += g
+        for prefix, uri in g.namespaces():
+            entity_graph.bind(prefix, uri, replace=True)
+    entity_graph.bind("owl", OWL)
+    for _, _, a, b, _, _ in all_links:
+        entity_graph.add((a.uri, OWL.sameAs, b.uri))
+    entity_graph.serialize(destination=out["entity_graph"], format="turtle", encoding="utf-8")
+
+    with open(out["report"], "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["from_source", "from_uri", "from_name", "to_source", "to_uri", "to_name",
+                    "name_similarity", "distance_m"])
+        for src, dst, a, b, sim, dist in sorted(all_links, key=lambda l: (l[0], l[2].name or "")):
+            w.writerow([src, a.uri, a.name, dst, b.uri, b.name,
+                        "" if sim is None else f"{sim:.2f}", "" if dist is None else f"{dist:.1f}"])
+
+    print(f"owl:sameAs links in total: {len(all_links)} -> {out['entity_graph']} (details in {out['report']})")
 
 
 if __name__ == "__main__":

@@ -1,20 +1,12 @@
-# Entity unification between two source KGs.
+# Entity unification between the source KGs listed in pipeline.yaml.
 # Two entities are candidates only if their types are compatible in the unifying
 # ontology plus the teleontology (one type is equal to or a subclass of the other).
 # This filter is always on. On top of it, the primitives below can be switched on
 # or off independently; every enabled primitive must hold.
 
-unified_ontology: "OSM-GTFS-zzz.owl"
-teleontology: "teleontology.ttl"
-
-sources:
-  kge: "kge_kg.ttl"
-  osm: "osm_kg.ttl"
-
-# owl:sameAs links go from the entities of "from" to those of "to"
-link:
-  from: "kge"
-  to: "osm"
+# Pairs of sources (names from pipeline.yaml) to link: owl:sameAs goes from "from" to "to"
+links:
+  - {from: "kge", to: "osm"}
 
 namespaces:
   osm_ont: "http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#"
@@ -52,6 +44,3 @@ primitives:
 
 # Each entity is linked to at most one entity of the other source (the best candidate)
 one_to_one: true
-
-output: "unified_kg.ttl"
-report: "unification_report.csv"
