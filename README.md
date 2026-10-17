@@ -24,9 +24,9 @@ The case study uses two sources about Trentino:
 
 | File | What it is |
 |---|---|
-| `teleontology.ttl` | E-type graph: classes, hierarchy and properties of the sources, plus their alignment to the unifying ontology (`ontologies/OSM-GTFS-zzz.owl`) |
+| `teleontology.ttl` | E-type graph: the e-types of the sources with their hierarchy and properties, plus their alignment to the unifying ontology (`ontologies/OSM-GTFS-zzz.owl`) |
+| `teleology.ttl` | built from the teleontology: the e-types of the application, no hierarchy, each with all its properties; the entity graph is built on it |
 | `entity_graph.ttl` | the entities of all sources, unchanged (original URI and type), plus the `owl:sameAs` links between the same real-world things |
-| `teleology.ttl` | flat schema of the entity graph: only the e-types it uses, no hierarchy, each with all its properties |
 | `unification_report.csv` | every link with its name similarity and distance |
 
 ## Pipeline
@@ -39,8 +39,8 @@ are generic and only read `config/pipeline.yaml` and the files it points to.
 | 1 | `src/1_extraction_osm.py` | `config/osm_source.yaml`, OpenStreetMap | `osm_kg.ttl` (cache: `cache/raw_osm_data.pkl`) |
 | 1 | `src/1_extraction_kge.py` | `config/kge_source.yaml`, `datasets/kge/*.csv` | `kge_kg.ttl` |
 | 2 | `src/2_mapping.py` | `config/pipeline.yaml`, source ontologies, `config/alignment_*.yaml` | `teleontology.ttl` |
-| 3 | `src/3_unification.py` | `config/pipeline.yaml`, `config/unification.yaml`, source KGs | `entity_graph.ttl`, report |
-| 4 | `src/4_teleology.py` | `entity_graph.ttl` | `teleology.ttl` |
+| 3 | `src/3_teleology.py` | `config/pipeline.yaml`, `teleontology.ttl` | `teleology.ttl` |
+| 4 | `src/4_unification.py` | `config/pipeline.yaml`, `config/unification.yaml`, source KGs, `teleology.ttl` | `entity_graph.ttl`, report |
 
 From the repository root, `python run_pipeline.py` runs the extraction scripts listed in
 `config/pipeline.yaml`, then stages 2-4, and stops at the first error.
@@ -56,14 +56,24 @@ From the repository root, `python run_pipeline.py` runs the extraction scripts l
   the KGE ontology (`ontologies/kge_ontology.owl`). Tourists are linked to their places by exact name.
 
 ### Stage 2: mapping
-Builds the teleontology from the sources in `config/pipeline.yaml`: the schema of each source ontology
-plus its alignment file, which connects it to the unifying ontology with two operations, for
-classes and properties alike: `equivalent` (e.g. `etype:has_name ≡ osm_ont:name`) and `child_of`
-(e.g. `etype:restaurant ⊑ osm_ont:restaurant`). Terms with no rule (e.g. `etype:tourist`) are not
-mapped. Sources already described with the unifying ontology (OSM) need no alignment.
+Builds the teleontology from the sources in `config/pipeline.yaml`. For each source it takes, from
+its ontology, the e-types the application uses (`etypes`), their ancestors and the properties whose
+domain is one of them, and adds the alignment file, which connects them to the unifying ontology
+with two operations, for classes and properties alike: `equivalent` (e.g. `etype:has_name ≡
+osm_ont:name`) and `child_of` (e.g. `etype:restaurant ⊑ osm_ont:restaurant`). Terms with no rule
+(e.g. `etype:tourist`) are not mapped. Sources described with the unifying ontology itself (OSM)
+need no alignment.
 
-### Stage 3: unification
-For every pair of sources listed under `links` in `config/unification.yaml`, two entities are candidates
+### Stage 3: teleology
+Built from the teleontology: the e-types listed in `config/pipeline.yaml`, with no hierarchy. Each
+e-type gets the properties of its class and of its ancestors in its own source hierarchy, so they are
+collapsed onto it. The alignment is not followed here: it stays in the teleontology. Properties are
+attached with `schema:domainIncludes` / `schema:rangeIncludes`, which, unlike `rdfs:domain` /
+`rdfs:range`, do not make a reasoner infer new types.
+
+### Stage 4: unification
+The entity graph is built on the teleology: the script checks that every entity type is one of its
+e-types. For every pair of sources listed under `links` in `config/unification.yaml`, two entities are candidates
 only if their types are compatible in unifying ontology + teleontology (one equal to or subclass
 of the other); this filter is always on. Then:
 * **name**: Levenshtein similarity ≥ `min_similarity`, after an optional normalization (accents,
@@ -76,19 +86,13 @@ Each primitive can be switched on or off; every enabled primitive must hold. Wit
 each entity keeps only its best candidate. The name and coordinate properties of each source are
 found through the teleontology (all properties equivalent to `osm_ont:name`, `geo:lat`, `geo:long`).
 The script also prints the collisions, i.e. the entities that had more than one candidate.
-An alternative configuration can be passed on the command line: `python src/3_unification.py other.yaml`.
-
-### Stage 4: teleology
-Reads the entity graph and writes the e-types its entities use, with no hierarchy. Each e-type lists
-all the properties its entities use, inherited ones included. Properties are attached with
-`schema:domainIncludes` / `schema:rangeIncludes`, which, unlike `rdfs:domain` / `rdfs:range`, do not
-make a reasoner infer new types.
+An alternative configuration can be passed on the command line: `python src/4_unification.py other.yaml`.
 
 ## Adding a source
 1. Get its KG in RDF: an existing file, or a new extraction script listed under `extraction`.
 2. If it is not described with the unifying ontology, write `config/alignment_<name>.yaml`.
-3. Add it under `sources` in `config/pipeline.yaml` and the pair to link under `links` in
-   `config/unification.yaml`.
+3. Add it under `sources` in `config/pipeline.yaml` (KG, ontology, e-types used, alignment) and
+   the pair to link under `links` in `config/unification.yaml`.
 
 No change to the generic stages is needed.
 
@@ -103,3 +107,6 @@ Python 3 with the packages in `requirements.txt`, plus `osm2kg` installed from i
 ## GraphDB
 * Application view: `output/teleology.ttl` + `output/entity_graph.ttl`.
 * Schema view: `ontologies/OSM-GTFS-zzz.owl` + `output/teleontology.ttl`.
+
+The teleontology can also be loaded in the same repository as the entity graph: the e-types have
+the same URIs, so the hierarchy and the alignment attach to the entities automatically.

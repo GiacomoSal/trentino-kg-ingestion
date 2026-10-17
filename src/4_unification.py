@@ -1,10 +1,11 @@
-"""Stage 3: entity unification (generic).
+"""Stage 4: entity unification (generic) -> entity graph.
 
 Reads the source KGs listed in pipeline.yaml and, for every pair of sources listed
 under "links" in unification.yaml, finds the entities that describe the same
 real-world thing and links them with owl:sameAs. The output is the entity graph:
 the entities of all sources, unchanged (original URI and type, so provenance is
-preserved), plus the owl:sameAs links.
+preserved), plus the owl:sameAs links. The entity graph is built on the teleology:
+every entity type must be one of its e-types, and the script reports any that is not.
 
 1. Type filter (always on): two entities are candidates only if their types are
    compatible in the unifying ontology plus the teleontology, i.e. one type is
@@ -305,6 +306,16 @@ def main() -> None:
         graphs[key] = g
         entities[key] = read_entities(g, name_props, lat_props, lon_props)
         print(f"Source {key}: {len(entities[key])} entities")
+
+    # the entity graph attaches to the teleology: every entity type must be an e-type of it
+    teleology = Graph()
+    teleology.parse(out["teleology"])
+    etypes = set(teleology.subjects(RDF.type, OWL.Class))
+    outside = {t for ents in entities.values() for e in ents for t in e.types if t not in etypes}
+    if outside:
+        print(f"[WARNING] entity types missing from the teleology: {sorted(outside)}")
+    else:
+        print(f"All entity types are e-types of the teleology ({len(etypes)} e-types)")
 
     enabled = [p for p, on in (("name", st.use_name), ("coordinates", st.use_coords)) if on]
     print(f"Filters: type (always) + {', '.join(enabled) if enabled else 'no primitive'}")

@@ -11,8 +11,8 @@ import yaml
 
 GENERIC_STAGES = [
     "src/2_mapping.py",      # teleontology
-    "src/3_unification.py",  # entity graph + report
-    "src/4_teleology.py",    # teleology
+    "src/3_teleology.py",    # teleology, from the teleontology
+    "src/4_unification.py",  # entity graph (built on the teleology) + report
 ]
 
 

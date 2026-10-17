@@ -1,7 +1,8 @@
 # Pipeline configuration.
-# The generic stages (src/2_mapping.py, src/3_unification.py, src/4_teleology.py) only read this file and
-# the files it points to: they know nothing about the specific sources. Adding a source means
-# adding its extraction script (or an existing RDF file), an alignment file and an entry below.
+# The generic stages (src/2_mapping.py, src/3_teleology.py, src/4_unification.py) only read
+# this file and the files it points to: they know nothing about the specific sources.
+# Adding a source means adding its extraction script (or an existing RDF file), an alignment
+# file if needed, and an entry below.
 
 # The ontology everything is aligned to (space and time; the GTFS part is not used here)
 unified_ontology: "ontologies/OSM-GTFS-zzz.owl"
@@ -12,20 +13,38 @@ extraction:
   - "src/1_extraction_osm.py"
   - "src/1_extraction_kge.py"
 
+namespaces:
+  osm_ont: "http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#"
+  etype: "http://knowdive.disi.unitn.it/etype#"
+
+# For every source: its KG, the ontology its e-types come from, the e-types the application
+# uses (they become the teleology) and, if it is not the unifying ontology, the alignment file.
 sources:
   osm:
     kg: "output/osm_kg.ttl"
-    # typed with the classes of the unifying ontology itself: no ontology or alignment needed
+    # described with the unifying ontology itself: no alignment needed
+    ontology: "ontologies/OSM-GTFS-zzz.owl"
+    etypes: ["osm_ont:restaurant", "osm_ont:fast_food", "osm_ont:bar", "osm_ont:pub",
+             "osm_ont:cafe", "osm_ont:hotel", "osm_ont:motel", "osm_ont:guesthouse",
+             "osm_ont:alpine_hut", "osm_ont:museum", "osm_ont:castle", "osm_ont:ruins",
+             "osm_ont:railway_station", "osm_ont:railway_halt", "osm_ont:bus_stop"]
   kge:
     kg: "output/kge_kg.ttl"
     ontology: "ontologies/kge_ontology.owl"
     alignment: "config/alignment_kge.yaml"
+    etypes: ["etype:restaurant", "etype:bar_pub", "etype:hotel", "etype:holiday_house",
+             "etype:campsite", "etype:museum", "etype:natural_atraction", "etype:amusement_park",
+             "etype:skiing_infrastructure", "etype:local_souvenir", "etype:gas_station",
+             "etype:taxi_company", "etype:bus_stop", "etype:train_station",
+             "etype:bicycle_station", "etype:tourist"]
 
 outputs:
-  # E-type graph: classes, hierarchy and properties of the sources plus their alignment
+  # E-type graph: the e-types of the sources with their hierarchy and properties, plus the
+  # alignment to the unifying ontology
   teleontology: "output/teleontology.ttl"
+  # flat schema built from the teleontology: the application e-types, no hierarchy, each with
+  # all its properties; the entity graph is built on it
+  teleology: "output/teleology.ttl"
   # entities of all sources and the owl:sameAs links between them
   entity_graph: "output/entity_graph.ttl"
-  # flat schema of the entity graph: the e-types it uses, each with all its properties
-  teleology: "output/teleology.ttl"
   report: "output/unification_report.csv"

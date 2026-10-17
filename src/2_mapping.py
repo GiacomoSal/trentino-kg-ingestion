@@ -1,16 +1,19 @@
-"""Stage 2: mapping (generic).
+"""Stage 2: mapping (generic) -> teleontology.
 
-Builds the teleontology (the E-type graph of the application) from the sources listed
-in pipeline.yaml. For every source that has its own ontology, the teleontology contains:
-  - the classes, hierarchy and properties of that ontology;
-  - the alignment axioms of its alignment file, which connect them to the unifying
-    ontology with two operations, for classes and properties alike:
-      equivalent  owl:equivalentClass / owl:equivalentProperty
-      child_of    rdfs:subClassOf / rdfs:subPropertyOf
-Sources already described with the unifying ontology (e.g. OSM) need no alignment.
-The entities are not touched: they keep the types of their own graph.
+Builds the teleontology, the E-type graph of the application, from the sources listed
+in config/pipeline.yaml. For every source it takes, from the source ontology:
+  - the e-types the application uses and all their ancestors (the hierarchy);
+  - the data and object properties whose domain is one of those classes.
+Then it adds the alignment axioms of the source's alignment file, which connect its
+e-types and properties to the unifying ontology with two operations, for classes and
+properties alike:
+    equivalent  owl:equivalentClass / owl:equivalentProperty
+    child_of    rdfs:subClassOf / rdfs:subPropertyOf
+together with the unified classes those axioms point to and their ancestors.
+Sources described with the unifying ontology itself (e.g. OSM) need no alignment.
 """
 import sys
+from typing import Iterable, Set
 
 from rdflib import Graph, Namespace, URIRef
 from rdflib.namespace import OWL, RDF, RDFS
@@ -24,6 +27,7 @@ AXIOMS = {
     "classes": {"equivalent": OWL.equivalentClass, "child_of": RDFS.subClassOf},
     "properties": {"equivalent": OWL.equivalentProperty, "child_of": RDFS.subPropertyOf},
 }
+PROPERTY_TYPES = (OWL.ObjectProperty, OWL.DatatypeProperty)
 
 
 def check_exists(term: URIRef, ontology: Graph, where: str) -> None:
@@ -31,10 +35,47 @@ def check_exists(term: URIRef, ontology: Graph, where: str) -> None:
         print(f"  [WARNING] {term} is not defined in {where}")
 
 
-def add_alignment(tele: Graph, name: str, source_ontology: Graph, alignment: dict, unified: Graph) -> int:
-    """Adds the axioms of one alignment file; returns how many were added."""
+def with_ancestors(classes: Iterable[URIRef], ontology: Graph) -> Set[URIRef]:
+    """The classes plus all their superclasses in the ontology."""
+    seen, todo = set(classes), list(classes)
+    while todo:
+        for parent in ontology.objects(todo.pop(), RDFS.subClassOf):
+            if isinstance(parent, URIRef) and parent not in seen:
+                seen.add(parent)
+                todo.append(parent)
+    return seen
+
+
+def add_slice(tele: Graph, ontology: Graph, classes: Set[URIRef]) -> int:
+    """Copies the given classes (hierarchy, labels) and the properties whose domain is one of them."""
+    for c in classes:
+        tele.add((c, RDF.type, OWL.Class))
+        for p in (RDFS.label, RDFS.comment):
+            for value in ontology.objects(c, p):
+                tele.add((c, p, value))
+        for parent in ontology.objects(c, RDFS.subClassOf):
+            if parent in classes:
+                tele.add((c, RDFS.subClassOf, parent))
+    n_props = 0
+    for kind in PROPERTY_TYPES:
+        for prop in ontology.subjects(RDF.type, kind):
+            domains = [d for d in ontology.objects(prop, RDFS.domain) if d in classes]
+            if not domains:
+                continue
+            n_props += 1
+            tele.add((prop, RDF.type, kind))
+            for d in domains:
+                tele.add((prop, RDFS.domain, d))
+            for p in (RDFS.range, RDFS.label, RDFS.comment):
+                for value in ontology.objects(prop, p):
+                    tele.add((prop, p, value))
+    return n_props
+
+
+def add_alignment(tele: Graph, name: str, source_ontology: Graph, alignment: dict, unified: Graph) -> Set[URIRef]:
+    """Adds the axioms of one alignment file; returns the unified classes they point to."""
     ns = alignment["namespaces"]
-    added = 0
+    targets = set()
     for section, key in (("classes", "class"), ("properties", "property")):
         for rule in alignment.get(section, []):
             term = expand(rule[key], ns)
@@ -46,14 +87,16 @@ def add_alignment(tele: Graph, name: str, source_ontology: Graph, alignment: dic
             check_exists(term, source_ontology, f"the {name} ontology")
             check_exists(target, unified, "the unifying ontology")
             tele.add((term, predicate, target))
-            added += 1
+            if section == "classes":
+                targets.add(target)
     for prefix, uri in ns.items():
         tele.bind(prefix, uri, replace=True)
-    return added
+    return targets
 
 
 def main() -> None:
     cfg = load_yaml(PIPELINE)
+    ns = cfg["namespaces"]
     unified = Graph()
     unified.parse(cfg["unified_ontology"])
     # coordinates are stored with WGS84 geo:lat / geo:long, next to the unifying ontology
@@ -62,25 +105,25 @@ def main() -> None:
 
     tele = Graph()
     tele.add((URIRef("http://knowdive.disi.unitn.it/trentino-teleontology"), RDF.type, OWL.Ontology))
-    tele.add((GEO.lat, RDF.type, OWL.DatatypeProperty))
-    tele.add((GEO.long, RDF.type, OWL.DatatypeProperty))
+    for prop in (GEO.lat, GEO.long):
+        tele.add((prop, RDF.type, OWL.DatatypeProperty))
     tele.bind("geo", GEO, replace=True)
+    for prefix, uri in ns.items():
+        tele.bind(prefix, uri, replace=True)
 
     for name, source in cfg["sources"].items():
-        if not source.get("ontology"):
-            print(f"  {name}: described with the unifying ontology, no alignment")
-            continue
-        ontology = Graph()
-        ontology.parse(source["ontology"])
-        # the E-type graph keeps the schema of the source (classes, hierarchy, properties)
-        for triple in ontology:
-            if triple[1] == RDF.type and triple[2] == OWL.Ontology:
-                continue
-            tele.add(triple)
-        n = 0
+        ontology = unified if source["ontology"] == cfg["unified_ontology"] else Graph().parse(source["ontology"])
+        etypes = [expand(e, ns) for e in source["etypes"]]
+        for e in etypes:
+            check_exists(e, ontology, f"the {name} ontology")
+        classes = with_ancestors(etypes, ontology)
+        n_props = add_slice(tele, ontology, classes)
+        msg = f"  {name}: {len(etypes)} e-types, {len(classes)} classes with ancestors, {n_props} properties"
         if source.get("alignment"):
-            n = add_alignment(tele, name, ontology, load_yaml(source["alignment"]), unified)
-        print(f"  {name}: {len(ontology)} schema triples, {n} alignment axioms")
+            targets = add_alignment(tele, name, ontology, load_yaml(source["alignment"]), unified)
+            add_slice(tele, unified, with_ancestors(targets, unified))
+            msg += f", aligned to {len(targets)} unified classes"
+        print(msg)
 
     out = cfg["outputs"]["teleontology"]
     tele.serialize(destination=ensure_parent(out), format="turtle", encoding="utf-8")
