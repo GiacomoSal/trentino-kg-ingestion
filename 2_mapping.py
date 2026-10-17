@@ -1,182 +1,90 @@
-"""Stage 2: mapping.
+"""Stage 2: mapping (generic).
 
-a) Builds the OSM source KG (osm_kg.ttl) from the data extracted in stage 1. Each
-   element keeps its original OpenStreetMap URI and gets the class of the OSM
-   ontology chosen by osm_source.yaml. The OSM ontology is also the unifying
-   ontology, so these types need no further mapping.
-b) Builds the teleontology (teleontology.ttl) from the alignment files
-   (alignment_*.yaml): the axioms that connect the types and properties of the
-   other sources to the unifying ontology. The entities keep the types of their
-   own graph, so the teleology keeps the diversity of the sources; the alignment
-   lives only here.
+Builds the teleontology (the E-type graph of the application) from the sources listed
+in pipeline.yaml. For every source that has its own ontology, the teleontology contains:
+  - the classes, hierarchy and properties of that ontology;
+  - the alignment axioms of its alignment file, which connect them to the unifying
+    ontology with two operations, for classes and properties alike:
+      equivalent  owl:equivalentClass / owl:equivalentProperty
+      child_of    rdfs:subClassOf / rdfs:subPropertyOf
+Sources already described with the unifying ontology (e.g. OSM) need no alignment.
+The entities are not touched: they keep the types of their own graph.
 """
-import glob
 import sys
-from typing import Optional, Tuple
 
-import pandas as pd
-from rdflib import Graph, Literal, Namespace, URIRef
-from rdflib.namespace import OWL, RDF, RDFS, XSD
+from rdflib import Graph, Namespace, URIRef
+from rdflib.namespace import OWL, RDF, RDFS
 
-from kg_utils import clean, expand, load_yaml
+from kg_utils import expand, load_yaml
 
-OSM_CONFIG = "osm_source.yaml"
-RAW_DATA = "raw_osm_data.pkl"
-OSM_OUTPUT = "osm_kg.ttl"
-UNIFIED_ONTOLOGY = "OSM-GTFS-zzz.owl"
-TELEONTOLOGY_OUTPUT = "teleontology.ttl"
-
-OSM_ELEMENT = "https://www.openstreetmap.org/"
-OSM_KEY = Namespace("https://wiki.openstreetmap.org/wiki/Key:")
+PIPELINE = "pipeline.yaml"
 GEO = Namespace("http://www.w3.org/2003/01/geo/wgs84_pos#")
 
+AXIOMS = {
+    "classes": {"equivalent": OWL.equivalentClass, "child_of": RDFS.subClassOf},
+    "properties": {"equivalent": OWL.equivalentProperty, "child_of": RDFS.subPropertyOf},
+}
 
-# ---------------------------------------------------------------- a) OSM source KG
-
-def element_ref(index_value, row) -> Optional[Tuple[str, str]]:
-    """Returns (element type, numeric id) of an OSM element.
-
-    osm2kg indexes the GeoDataFrame by (element, id), e.g. ('node', 1147756663).
-    The element type is part of the URI: node, way and relation ids can coincide.
-    """
-    if isinstance(index_value, tuple) and len(index_value) == 2:
-        element, osm_id = index_value
-    else:
-        element, osm_id = row.get("element"), row.get("id", index_value)
-    element, osm_id = clean(element), clean(osm_id)
-    if element is None or osm_id is None:
-        return None
-    return str(element), str(int(osm_id))
-
-
-def match_rule(tags, rules, ns) -> Optional[URIRef]:
-    """Class of the first rule whose filter matches the element's tags."""
-    for rule in rules:
-        for key, allowed in rule.get("osm_filter", {}).items():
-            if clean(tags.get(key)) in allowed:
-                return expand(rule["target_class"], ns)
-    return None
-
-
-def build_osm_kg(raw: pd.DataFrame, cfg: dict) -> Graph:
-    ns = cfg["namespaces"]
-    osm_ont = Namespace(ns["osm_ont"])
-    kg = Graph()
-    kg.bind("osm_ont", osm_ont)
-    kg.bind("geo", GEO, replace=True)
-    kg.bind("osmkey", OSM_KEY)
-
-    skipped = 0
-    for index_value, row in raw.iterrows():
-        ref = element_ref(index_value, row)
-        cls = match_rule(row, cfg["mappings"], ns)
-        if ref is None or cls is None:
-            skipped += 1
-            continue
-        element, osm_id = ref
-        node = URIRef(f"{OSM_ELEMENT}{element}/{osm_id}")
-
-        kg.add((node, RDF.type, cls))
-        kg.add((node, osm_ont.osm_id, Literal(int(osm_id), datatype=XSD.integer)))
-        name = clean(row.get("name"))
-        if isinstance(name, str):
-            kg.add((node, osm_ont.name, Literal(name, datatype=XSD.string)))
-
-        # Point used for the geographic primitive: the centroid of the geometry
-        geometry = row.get("geometry")
-        if geometry is not None and not getattr(geometry, "is_empty", False):
-            centroid = geometry.centroid
-            kg.add((node, GEO.lat, Literal(round(centroid.y, 7), datatype=XSD.float)))
-            kg.add((node, GEO.long, Literal(round(centroid.x, 7), datatype=XSD.float)))
-
-        for tag in cfg.get("tags_as_properties", []):
-            value = clean(row.get(tag))
-            if value is not None:
-                # ':' is percent-encoded so the key stays one local name (osmkey:addr%3Astreet)
-                kg.add((node, OSM_KEY[tag.replace(":", "%3A")], Literal(str(value), datatype=XSD.string)))
-
-    if skipped:
-        print(f"  {skipped} elements skipped (no id or no matching rule)")
-    return kg
-
-
-# ---------------------------------------------------------------- b) teleontology
 
 def check_exists(term: URIRef, ontology: Graph, where: str) -> None:
     if (term, None, None) not in ontology:
         print(f"  [WARNING] {term} is not defined in {where}")
 
 
-def add_alignment(tele: Graph, alignment: dict, unified: Graph) -> None:
-    """Adds the axioms of one alignment file to the teleontology.
-
-    Only two operations exist, for classes and properties alike:
-      equivalent  owl:equivalentClass / owl:equivalentProperty with a unified term
-      child_of    rdfs:subClassOf / rdfs:subPropertyOf a unified term
-    Classes and properties without a rule are not mapped: the entities keep them,
-    as defined in the source ontology.
-    """
+def add_alignment(tele: Graph, name: str, source_ontology: Graph, alignment: dict, unified: Graph) -> int:
+    """Adds the axioms of one alignment file; returns how many were added."""
     ns = alignment["namespaces"]
-    source = Graph()
-    source.parse(alignment["source_ontology"])
-    name = alignment["source"]
-    axioms = {
-        "classes": {"equivalent": OWL.equivalentClass, "child_of": RDFS.subClassOf},
-        "properties": {"equivalent": OWL.equivalentProperty, "child_of": RDFS.subPropertyOf},
-    }
-
+    added = 0
     for section, key in (("classes", "class"), ("properties", "property")):
         for rule in alignment.get(section, []):
             term = expand(rule[key], ns)
             target = expand(rule["target"], ns)
-            predicate = axioms[section].get(rule["operation"])
+            predicate = AXIOMS[section].get(rule["operation"])
             if predicate is None:
                 print(f"  [ERROR] unknown operation '{rule['operation']}' for {rule[key]}")
                 sys.exit(1)
-            check_exists(term, source, f"the {name} ontology")
+            check_exists(term, source_ontology, f"the {name} ontology")
             check_exists(target, unified, "the unifying ontology")
             tele.add((term, predicate, target))
-
+            added += 1
     for prefix, uri in ns.items():
         tele.bind(prefix, uri, replace=True)
-
-
-def build_teleontology() -> Graph:
-    unified = Graph()
-    unified.parse(UNIFIED_ONTOLOGY)
-    # the OSM source KG stores coordinates with WGS84 geo:lat / geo:long
-    for prop in (GEO.lat, GEO.long):
-        unified.add((prop, RDF.type, OWL.DatatypeProperty))
-    tele = Graph()
-    tele.add((URIRef("http://knowdive.disi.unitn.it/trentino-teleontology"), RDF.type, OWL.Ontology))
-    files = sorted(glob.glob("alignment_*.yaml"))
-    for path in files:
-        print(f"  alignment: {path}")
-        add_alignment(tele, load_yaml(path), unified)
-    # the coordinate properties used by the OSM source KG
-    tele.add((GEO.lat, RDF.type, OWL.DatatypeProperty))
-    tele.add((GEO.long, RDF.type, OWL.DatatypeProperty))
-    tele.bind("geo", GEO, replace=True)
-    return tele
+    return added
 
 
 def main() -> None:
-    cfg = load_yaml(OSM_CONFIG)
-    try:
-        raw = pd.read_pickle(RAW_DATA)
-    except FileNotFoundError:
-        print(f"[ERROR] {RAW_DATA} not found. Run 1_extraction.py first.")
-        sys.exit(1)
+    cfg = load_yaml(PIPELINE)
+    unified = Graph()
+    unified.parse(cfg["unified_ontology"])
+    # coordinates are stored with WGS84 geo:lat / geo:long, next to the unifying ontology
+    for prop in (GEO.lat, GEO.long):
+        unified.add((prop, RDF.type, OWL.DatatypeProperty))
 
-    print("Building the OSM source KG...")
-    osm_kg = build_osm_kg(raw, cfg)
-    osm_kg.serialize(destination=OSM_OUTPUT, format="turtle", encoding="utf-8")
-    print(f"OSM source KG saved to {OSM_OUTPUT} ({len(osm_kg)} triples)")
+    tele = Graph()
+    tele.add((URIRef("http://knowdive.disi.unitn.it/trentino-teleontology"), RDF.type, OWL.Ontology))
+    tele.add((GEO.lat, RDF.type, OWL.DatatypeProperty))
+    tele.add((GEO.long, RDF.type, OWL.DatatypeProperty))
+    tele.bind("geo", GEO, replace=True)
 
-    print("Building the teleontology...")
-    tele = build_teleontology()
-    tele.serialize(destination=TELEONTOLOGY_OUTPUT, format="turtle", encoding="utf-8")
-    print(f"Teleontology saved to {TELEONTOLOGY_OUTPUT} ({len(tele)} triples)")
+    for name, source in cfg["sources"].items():
+        if not source.get("ontology"):
+            print(f"  {name}: described with the unifying ontology, no alignment")
+            continue
+        ontology = Graph()
+        ontology.parse(source["ontology"])
+        # the E-type graph keeps the schema of the source (classes, hierarchy, properties)
+        for triple in ontology:
+            if triple[1] == RDF.type and triple[2] == OWL.Ontology:
+                continue
+            tele.add(triple)
+        n = 0
+        if source.get("alignment"):
+            n = add_alignment(tele, name, ontology, load_yaml(source["alignment"]), unified)
+        print(f"  {name}: {len(ontology)} schema triples, {n} alignment axioms")
+
+    out = cfg["outputs"]["teleontology"]
+    tele.serialize(destination=out, format="turtle", encoding="utf-8")
+    print(f"Teleontology saved to {out} ({len(tele)} triples)")
 
 
 if __name__ == "__main__":

@@ -10,9 +10,6 @@
 # mapped: the unifying ontology covers space and time, and they stay as defined in the
 # KGE ontology.
 
-source: "kge"
-source_ontology: "kge_ontology.owl"
-
 namespaces:
   etype: "http://knowdive.disi.unitn.it/etype#"
   osm_ont: "http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#"
