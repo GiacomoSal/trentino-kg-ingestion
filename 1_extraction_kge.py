@@ -1,6 +1,7 @@
 """Stage 1 (KGE source): builds the KGE source KG from the course CSV files.
 
-Every entity keeps the types and properties of the KGE ontology (kge_ontology.owl),
+Source-specific: the course repository has the final datasets as CSV but not the RDF
+graph, which was built with Karma. Every entity keeps the types and properties of the KGE ontology (kge_ontology.owl),
 so the source KG is described only with its own ontology. Output: kge_kg.ttl
 """
 import os
