@@ -228,5 +228,6 @@ cache/
 osm_kg.ttl
 kge_kg.ttl
 teleontology.ttl
-unified_kg.ttl
+entity_graph.ttl
+teleology.ttl
 unification_report.csv

@@ -1,49 +1,59 @@
 # Trentino KG Ingestion (iTelos approach)
 
-Pipeline that integrates two knowledge graphs about Trentino into one unified KG:
+Pipeline that integrates knowledge graphs with different ontologies into one entity graph,
+following the iTelos separation between teleontology, teleology and entity graph.
+
+The case study uses two sources about Trentino:
 
 * **OSM**: points of interest extracted from OpenStreetMap (2 km around the centre of Trento).
 * **KGE**: the "Trentino tourist facilities" KG of the Knowledge Graph Engineering course
   (restaurants, hotels, museums, stops, ... and six tourists such as Germano Rossi).
 
-Each source keeps its own ontology and its original URIs. The two ontologies are aligned
-through a **teleontology** built on the unifying ontology (`OSM-GTFS-zzz.owl`, space and time),
-and the entities that describe the same real-world thing are linked with `owl:sameAs`.
+## Outputs
+
+| File | What it is |
+|---|---|
+| `teleontology.ttl` | E-type graph: classes, hierarchy and properties of the sources, plus their alignment to the unifying ontology (`OSM-GTFS-zzz.owl`) |
+| `entity_graph.ttl` | the entities of all sources, unchanged (original URI and type), plus the `owl:sameAs` links between the same real-world things |
+| `teleology.ttl` | flat schema of the entity graph: only the e-types it uses, no hierarchy, each with all its properties |
+| `unification_report.csv` | every link with its name similarity and distance |
 
 ## Pipeline
 
+All the configuration is in `pipeline.yaml`. Extraction is source-specific; the other stages
+are generic and only read `pipeline.yaml` and the files it points to.
+
 | Stage | Script | Reads | Produces |
 |---|---|---|---|
-| 1 | `1_extraction.py` | `osm_source.yaml`, OpenStreetMap | `raw_osm_data.pkl` |
+| 1 | `1_extraction_osm.py` | `osm_source.yaml`, OpenStreetMap | `osm_kg.ttl` (cache: `raw_osm_data.pkl`) |
 | 1 | `1_extraction_kge.py` | `kge_source.yaml`, `kge_data/*.csv` | `kge_kg.ttl` |
-| 2 | `2_mapping.py` | `raw_osm_data.pkl`, `osm_source.yaml`, `alignment_*.yaml` | `osm_kg.ttl`, `teleontology.ttl` |
-| 3 | `3_unification.py` | `unification.yaml` and the files above | `unified_kg.ttl`, `unification_report.csv` |
+| 2 | `2_mapping.py` | `pipeline.yaml`, source ontologies, `alignment_*.yaml` | `teleontology.ttl` |
+| 3 | `3_unification.py` | `pipeline.yaml`, `unification.yaml`, source KGs | `entity_graph.ttl`, report |
+| 4 | `4_teleology.py` | `entity_graph.ttl` | `teleology.ttl` |
 
-`run_pipeline.py` runs the stages in order and stops at the first error.
-`python run_pipeline.py --skip-download` reuses `raw_osm_data.pkl` instead of querying OSM again.
+`run_pipeline.py` runs the extraction scripts listed in `pipeline.yaml`, then stages 2-4, and
+stops at the first error. `python run_pipeline.py --skip-download` reuses `raw_osm_data.pkl`.
 
-### Stage 1: extraction
-* **OSM**: downloads with osm2kg the elements with the tags listed in `osm_source.yaml`.
+### Stage 1: extraction (source-specific)
+* **OSM**: downloads with osm2kg the elements with the tags listed in `osm_source.yaml`. Every
+  element keeps its original URI (`https://www.openstreetmap.org/node/<id>`, `way/<id>`,
+  `relation/<id>`) and gets the class of the OSM ontology chosen by `osm_source.yaml`
+  (e.g. `osm_ont:restaurant`). The centroid of the geometry is stored as `geo:lat` / `geo:long`.
 * **KGE**: the course repository has the final datasets as CSV but not the RDF graph (built
   with Karma), so the script rebuilds it from `kge_data/` with the classes and properties of
   the KGE ontology (`kge_ontology.owl`). Tourists are linked to their places by exact name.
 
 ### Stage 2: mapping
-* **OSM source KG**: every element gets its original URI (`https://www.openstreetmap.org/node/<id>`,
-  `way/<id>`, `relation/<id>`) and the class of the OSM ontology chosen by `osm_source.yaml`
-  (e.g. `osm_ont:restaurant`). The OSM ontology is the unifying ontology, so these types need no
-  further mapping. The centroid of the geometry is stored as `geo:lat` / `geo:long`.
-* **Teleontology**: built from `alignment_kge.yaml`. The entities keep the types of their own
-  graph, so the teleology keeps the classes and properties of each source; the teleontology only
-  connects them to the unifying ontology with two operations, for classes and properties alike:
-  `equivalent` (e.g. `etype:has_name ≡ osm_ont:name`) and `child_of`
-  (e.g. `etype:restaurant ⊑ osm_ont:restaurant`). Terms with no rule (e.g. `etype:tourist`) are not
-  mapped and stay as defined in the KGE ontology.
+Builds the teleontology from the sources in `pipeline.yaml`: the schema of each source ontology
+plus its alignment file, which connects it to the unifying ontology with two operations, for
+classes and properties alike: `equivalent` (e.g. `etype:has_name ≡ osm_ont:name`) and `child_of`
+(e.g. `etype:restaurant ⊑ osm_ont:restaurant`). Terms with no rule (e.g. `etype:tourist`) are not
+mapped. Sources already described with the unifying ontology (OSM) need no alignment.
 
 ### Stage 3: unification
-Two entities are candidates only if their types are compatible in unifying ontology + teleontology
-(one equal to or subclass of the other); this filter is always on. Then, as configured in
-`unification.yaml`:
+For every pair of sources listed under `links` in `unification.yaml`, two entities are candidates
+only if their types are compatible in unifying ontology + teleontology (one equal to or subclass
+of the other); this filter is always on. Then:
 * **name**: Levenshtein similarity ≥ `min_similarity`, after an optional normalization (accents,
   punctuation, generic words such as "hotel" or "ristorante"). With `method: levenshtein` the whole
   names are compared; with `method: partial` the shorter name is compared with the most similar part
@@ -53,9 +63,21 @@ Two entities are candidates only if their types are compatible in unifying ontol
 Each primitive can be switched on or off; every enabled primitive must hold. With `one_to_one`
 each entity keeps only its best candidate. The name and coordinate properties of each source are
 found through the teleontology (all properties equivalent to `osm_ont:name`, `geo:lat`, `geo:long`).
-`unification_report.csv` lists every link with its similarity and distance; the script also prints
-the collisions, i.e. the entities that had more than one candidate before the one-to-one choice.
+The script also prints the collisions, i.e. the entities that had more than one candidate.
 An alternative configuration can be passed on the command line: `python 3_unification.py other.yaml`.
+
+### Stage 4: teleology
+Reads the entity graph and writes the e-types its entities use, with no hierarchy. Each e-type lists
+all the properties its entities use, inherited ones included. Properties are attached with
+`schema:domainIncludes` / `schema:rangeIncludes`, which, unlike `rdfs:domain` / `rdfs:range`, do not
+make a reasoner infer new types.
+
+## Adding a source
+1. Get its KG in RDF: an existing file, or a new extraction script listed under `extraction`.
+2. If it is not described with the unifying ontology, write `alignment_<name>.yaml`.
+3. Add it under `sources` in `pipeline.yaml` and the pair to link under `links` in `unification.yaml`.
+
+No change to the generic stages is needed.
 
 ## Requirements
 Python 3 with the packages in `requirements.txt`, plus `osm2kg` installed from its local folder:
@@ -66,5 +88,7 @@ Python 3 with the packages in `requirements.txt`, plus `osm2kg` installed from i
     pip install -e /path/to/osm2kg-main
 
 ## GraphDB
-Import `OSM-GTFS-zzz.owl`, `kge_ontology.owl`, `teleontology.ttl` and `unified_kg.ttl`.
+* Application view: `teleology.ttl` + `entity_graph.ttl`.
+* Schema view: `OSM-GTFS-zzz.owl` + `teleontology.ttl`.
+
 Generated files are not versioned (see `.gitignore`).
