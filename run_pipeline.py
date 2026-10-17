@@ -1,21 +1,27 @@
-import os
+"""Runs the whole pipeline in order and stops at the first error.
+
+The extraction scripts are source-specific and listed in pipeline.yaml; the other
+stages are generic. --skip-download is passed to the extraction scripts so that
+OSM data is read from the local cache instead of being downloaded again.
+"""
 import subprocess
 import sys
 
-STAGES = [
-    "1_extraction.py",       # OSM data via osm2kg -> raw_osm_data.pkl
-    "1_extraction_kge.py",   # KGE CSV files -> kge_kg.ttl
-    "2_mapping.py",          # osm_kg.ttl + teleontology.ttl
-    "3_unification.py",      # unified_kg.ttl + unification_report.csv
+from kg_utils import load_yaml
+
+GENERIC_STAGES = [
+    "2_mapping.py",      # teleontology
+    "3_unification.py",  # entity graph + report
+    "4_teleology.py",    # teleology
 ]
 
 
-def run_script(script_name):
+def run_script(script_name, args=()):
     """Executes a python script and halts the pipeline on error."""
     print(f"\n--- Starting {script_name} ---")
     try:
         # sys.executable ensures the script runs in the current virtual environment
-        subprocess.run([sys.executable, script_name], check=True)
+        subprocess.run([sys.executable, script_name, *args], check=True)
     except subprocess.CalledProcessError:
         print(f"[ERROR] {script_name} failed. Halting pipeline to prevent partial graph generation.")
         sys.exit(1)
@@ -25,19 +31,17 @@ def run_script(script_name):
 
 
 def main():
-    # --skip-download reuses raw_osm_data.pkl instead of querying OSM again
-    skip_download = "--skip-download" in sys.argv
-    for script in STAGES:
-        if script == "1_extraction.py" and skip_download:
-            if not os.path.exists("raw_osm_data.pkl"):
-                print("[ERROR] --skip-download needs raw_osm_data.pkl")
-                sys.exit(1)
-            print("\n--- Skipping 1_extraction.py (using raw_osm_data.pkl) ---")
-            continue
+    cfg = load_yaml("pipeline.yaml")
+    extraction_args = ["--skip-download"] if "--skip-download" in sys.argv else []
+    for script in cfg.get("extraction", []):
+        run_script(script, extraction_args)
+    for script in GENERIC_STAGES:
         run_script(script)
 
+    out = cfg["outputs"]
     print("\n[+] Pipeline execution completed successfully.")
-    print("[!] Load into GraphDB: OSM-GTFS-zzz.owl, kge_ontology.owl, teleontology.ttl, unified_kg.ttl")
+    print(f"[!] GraphDB, application view: {out['teleology']} + {out['entity_graph']}")
+    print(f"[!] GraphDB, schema view: {cfg['unified_ontology']} + {out['teleontology']}")
 
 
 if __name__ == "__main__":
