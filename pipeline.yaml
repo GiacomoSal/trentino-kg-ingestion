@@ -1,0 +1,31 @@
+# Pipeline configuration.
+# The generic stages (2_mapping.py, 3_unification.py, 4_teleology.py) only read this file and
+# the files it points to: they know nothing about the specific sources. Adding a source means
+# adding its extraction script (or an existing RDF file), an alignment file and an entry below.
+
+# The ontology everything is aligned to (space and time; the GTFS part is not used here)
+unified_ontology: "OSM-GTFS-zzz.owl"
+
+# Source-specific extraction scripts, run in order. Each one writes the source KG listed
+# under "sources". A source that is already available as RDF needs no script.
+extraction:
+  - "1_extraction_osm.py"
+  - "1_extraction_kge.py"
+
+sources:
+  osm:
+    kg: "osm_kg.ttl"
+    # typed with the classes of the unifying ontology itself: no ontology or alignment needed
+  kge:
+    kg: "kge_kg.ttl"
+    ontology: "kge_ontology.owl"
+    alignment: "alignment_kge.yaml"
+
+outputs:
+  # E-type graph: classes, hierarchy and properties of the sources plus their alignment
+  teleontology: "teleontology.ttl"
+  # entities of all sources and the owl:sameAs links between them
+  entity_graph: "entity_graph.ttl"
+  # flat schema of the entity graph: the e-types it uses, each with all its properties
+  teleology: "teleology.ttl"
+  report: "unification_report.csv"
