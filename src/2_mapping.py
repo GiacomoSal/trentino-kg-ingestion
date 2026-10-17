@@ -15,9 +15,9 @@ import sys
 from rdflib import Graph, Namespace, URIRef
 from rdflib.namespace import OWL, RDF, RDFS
 
-from kg_utils import expand, load_yaml
+from kg_utils import ensure_parent, expand, load_yaml
 
-PIPELINE = "pipeline.yaml"
+PIPELINE = "config/pipeline.yaml"
 GEO = Namespace("http://www.w3.org/2003/01/geo/wgs84_pos#")
 
 AXIOMS = {
@@ -83,7 +83,7 @@ def main() -> None:
         print(f"  {name}: {len(ontology)} schema triples, {n} alignment axioms")
 
     out = cfg["outputs"]["teleontology"]
-    tele.serialize(destination=out, format="turtle", encoding="utf-8")
+    tele.serialize(destination=ensure_parent(out), format="turtle", encoding="utf-8")
     print(f"Teleontology saved to {out} ({len(tele)} triples)")
 
 

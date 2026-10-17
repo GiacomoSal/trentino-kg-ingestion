@@ -1,5 +1,5 @@
 # Alignment of the KGE ontology to the unifying ontology (OSM-GTFS-zzz.owl).
-# 2_mapping.py turns these rules into teleontology.ttl.
+# src/2_mapping.py turns these rules into output/teleontology.ttl.
 #
 # The entities keep the types of the KGE graph: the teleology keeps the classes and
 # properties of each source graph, and the teleontology only connects them to the

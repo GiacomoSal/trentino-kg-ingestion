@@ -1,18 +1,18 @@
 """Runs the whole pipeline in order and stops at the first error.
 
 The extraction scripts are source-specific and listed in pipeline.yaml; the other
-stages are generic. --skip-download is passed to the extraction scripts so that
+stages are generic. Run it from the repository root. --skip-download is passed to the extraction scripts so that
 OSM data is read from the local cache instead of being downloaded again.
 """
 import subprocess
 import sys
 
-from kg_utils import load_yaml
+import yaml
 
 GENERIC_STAGES = [
-    "2_mapping.py",      # teleontology
-    "3_unification.py",  # entity graph + report
-    "4_teleology.py",    # teleology
+    "src/2_mapping.py",      # teleontology
+    "src/3_unification.py",  # entity graph + report
+    "src/4_teleology.py",    # teleology
 ]
 
 
@@ -31,7 +31,8 @@ def run_script(script_name, args=()):
 
 
 def main():
-    cfg = load_yaml("pipeline.yaml")
+    with open("config/pipeline.yaml", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
     extraction_args = ["--skip-download"] if "--skip-download" in sys.argv else []
     for script in cfg.get("extraction", []):
         run_script(script, extraction_args)

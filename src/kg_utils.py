@@ -1,5 +1,6 @@
 """Small helpers shared by the pipeline scripts."""
 import math
+import os
 from typing import Any, Optional
 
 import yaml
@@ -7,6 +8,14 @@ from rdflib import Literal, URIRef
 from rdflib.namespace import XSD
 
 DATATYPES = {"string": XSD.string, "float": XSD.float, "int": XSD.int, "integer": XSD.integer}
+
+
+def ensure_parent(path: str) -> str:
+    """Creates the folder of a file about to be written; returns the path."""
+    folder = os.path.dirname(path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    return path
 
 
 def load_yaml(path: str) -> dict:

@@ -1,10 +1,10 @@
 # KGE source ("Trentino tourist facilities", Knowledge Graph Engineering 2022/23).
 # The course repository holds the final datasets as CSV (Datasets/Data Integration)
-# and the ontology (Teleologies/Formal Modeling/teleont-formal.owl -> kge_ontology.owl),
-# but not the RDF graph, which was built with Karma. 1_extraction_kge.py rebuilds it
+# and the ontology (Teleologies/Formal Modeling/teleont-formal.owl -> ontologies/kge_ontology.owl),
+# but not the RDF graph, which was built with Karma. src/1_extraction_kge.py rebuilds it
 # from the CSVs using the classes and properties of that ontology.
 
-csv_dir: "kge_data"
+csv_dir: "datasets/kge"
 base_uri: "http://knowdive.disi.unitn.it/kge-tourist-facilities/"
 
 namespaces:

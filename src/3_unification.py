@@ -31,10 +31,10 @@ from typing import Dict, List, Optional, Set
 from rdflib import Graph, URIRef
 from rdflib.namespace import OWL, RDF, RDFS
 
-from kg_utils import expand, load_yaml
+from kg_utils import ensure_parent, expand, load_yaml
 
-PIPELINE = "pipeline.yaml"
-CONFIG = "unification.yaml"
+PIPELINE = "config/pipeline.yaml"
+CONFIG = "config/unification.yaml"
 
 try:  # optional, much faster; the pure Python version gives the same results
     from rapidfuzz.distance import Levenshtein as _rf_levenshtein
@@ -329,9 +329,9 @@ def main() -> None:
     entity_graph.bind("owl", OWL)
     for _, _, a, b, _, _ in all_links:
         entity_graph.add((a.uri, OWL.sameAs, b.uri))
-    entity_graph.serialize(destination=out["entity_graph"], format="turtle", encoding="utf-8")
+    entity_graph.serialize(destination=ensure_parent(out["entity_graph"]), format="turtle", encoding="utf-8")
 
-    with open(out["report"], "w", newline="", encoding="utf-8") as f:
+    with open(ensure_parent(out["report"]), "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["from_source", "from_uri", "from_name", "to_source", "to_uri", "to_name",
                     "name_similarity", "distance_m"])

@@ -1,12 +1,12 @@
-"""Stage 1 (OSM source): builds the OSM source KG (osm_kg.ttl).
+"""Stage 1 (OSM source): builds the OSM source KG (output/osm_kg.ttl).
 
 Source-specific. Downloads with osm2kg the elements whose tags appear in
-osm_source.yaml (cached in raw_osm_data.pkl), then turns each element into an
+config/osm_source.yaml (cached in cache/raw_osm_data.pkl), then turns each element into an
 entity that keeps its original OpenStreetMap URI and gets the class of the OSM
-ontology chosen by osm_source.yaml. The OSM ontology is also the unifying
+ontology chosen by config/osm_source.yaml. The OSM ontology is also the unifying
 ontology, so these types need no further alignment.
 
-Use --skip-download to reuse raw_osm_data.pkl instead of querying OSM again.
+Use --skip-download to reuse cache/raw_osm_data.pkl instead of querying OSM again.
 """
 import os
 import sys
@@ -16,11 +16,11 @@ import pandas as pd
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import RDF, XSD
 
-from kg_utils import clean, expand, load_yaml
+from kg_utils import clean, ensure_parent, expand, load_yaml
 
-CONFIG = "osm_source.yaml"
-RAW_DATA = "raw_osm_data.pkl"
-OUTPUT = "osm_kg.ttl"
+CONFIG = "config/osm_source.yaml"
+RAW_DATA = "cache/raw_osm_data.pkl"
+OUTPUT = "output/osm_kg.ttl"
 
 # Trento city centre and extraction radius
 CENTER = (46.0678, 11.1211)
@@ -53,7 +53,7 @@ def download(cfg: dict) -> None:
     gdf = og.feature.features_from_point(CENTER, tags=tags, dist=RADIUS_M)
     # keep only the elements with a name
     gdf = og.feature.filter_gdf(gdf, including_filters={"name": True})
-    gdf.to_pickle(RAW_DATA)
+    gdf.to_pickle(ensure_parent(RAW_DATA))
     print(f"Raw data cached in {RAW_DATA}")
 
 
@@ -138,7 +138,7 @@ def main() -> None:
 
     raw = pd.read_pickle(RAW_DATA)
     kg = build_osm_kg(raw, cfg)
-    kg.serialize(destination=OUTPUT, format="turtle", encoding="utf-8")
+    kg.serialize(destination=ensure_parent(OUTPUT), format="turtle", encoding="utf-8")
     print(f"OSM source KG saved to {OUTPUT} ({len(kg)} triples)")
 
 

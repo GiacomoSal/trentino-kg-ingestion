@@ -1,8 +1,8 @@
 """Stage 1 (KGE source): builds the KGE source KG from the course CSV files.
 
 Source-specific: the course repository has the final datasets as CSV but not the RDF
-graph, which was built with Karma. Every entity keeps the types and properties of the KGE ontology (kge_ontology.owl),
-so the source KG is described only with its own ontology. Output: kge_kg.ttl
+graph, which was built with Karma. Every entity keeps the types and properties of the KGE ontology (ontologies/kge_ontology.owl),
+so the source KG is described only with its own ontology. Output: output/kge_kg.ttl
 """
 import os
 import sys
@@ -11,10 +11,10 @@ import pandas as pd
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
-from kg_utils import clean, expand, load_yaml, typed_literal
+from kg_utils import clean, ensure_parent, expand, load_yaml, typed_literal
 
-CONFIG = "kge_source.yaml"
-OUTPUT = "kge_kg.ttl"
+CONFIG = "config/kge_source.yaml"
+OUTPUT = "output/kge_kg.ttl"
 
 
 def read_csv(path: str) -> pd.DataFrame:
@@ -103,7 +103,7 @@ def main() -> None:
     for item in unresolved:
         print(f"  [WARNING] place not found in the KGE data: {item}")
 
-    kg.serialize(destination=OUTPUT, format="turtle", encoding="utf-8")
+    kg.serialize(destination=ensure_parent(OUTPUT), format="turtle", encoding="utf-8")
     print(f"KGE source KG saved to {OUTPUT} ({len(kg)} triples)")
 
 

@@ -15,9 +15,9 @@ from collections import defaultdict
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import OWL, RDF, RDFS, XSD
 
-from kg_utils import load_yaml
+from kg_utils import ensure_parent, load_yaml
 
-PIPELINE = "pipeline.yaml"
+PIPELINE = "config/pipeline.yaml"
 SCHEMA = Namespace("http://schema.org/")
 SKIP_PREDICATES = {RDF.type, OWL.sameAs}
 SKIP_NAMESPACES = (str(RDF), str(RDFS), str(OWL))
@@ -84,7 +84,7 @@ def main() -> None:
         for r in ranges[p]:
             tele.add((p, SCHEMA.rangeIncludes, r))
 
-    tele.serialize(destination=out["teleology"], format="turtle", encoding="utf-8")
+    tele.serialize(destination=ensure_parent(out["teleology"]), format="turtle", encoding="utf-8")
     print(f"Teleology saved to {out['teleology']}: {len(etypes)} e-types, {len(domains)} properties, "
           f"no hierarchy ({len(tele)} triples)")
 
