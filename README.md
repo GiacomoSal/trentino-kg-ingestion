@@ -9,6 +9,9 @@ The case study uses two sources about Trentino:
 * **KGE**: the "Trentino tourist facilities" KG of the Knowledge Graph Engineering course
   (restaurants, hotels, museums, stops, ... and six tourists such as Germano Rossi).
 
+To change or extend the pipeline, see the [developer guide](docs/DEVELOPER_GUIDE.md): what every
+file does and which one to change for the most common changes.
+
 ## Repository structure
 
 | Folder | Content |
