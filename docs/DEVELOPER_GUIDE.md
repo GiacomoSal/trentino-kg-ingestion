@@ -13,7 +13,7 @@ thing are linked with `owl:sameAs`. It follows the iTelos separation into three 
 | iTelos layer | File produced | Built by |
 |---|---|---|
 | Teleontology (E-type graph: e-types, hierarchy, properties, alignment to other schemas) | `output/teleontology.ttl` | `src/2_mapping.py` |
-| Teleology (flat schema of the application: e-types without hierarchy, each with all its properties) | `output/teleology.ttl` | `src/3_teleology.py` |
+| Teleology (flat schema of the application: the e-types that have instances, without hierarchy, each with all its properties) | `output/teleology.ttl` | `src/3_teleology.py` |
 | Entity graph (the entities, built on the teleology) | `output/entity_graph.ttl` | `src/4_unification.py` |
 
 Three rules hold everywhere and should be kept when changing the code:
@@ -68,7 +68,7 @@ configuration files are relative to it.
 
 | File | Read by | What it contains |
 |---|---|---|
-| `pipeline.yaml` | stages 2, 3, 4 and `run_pipeline.py` | The unifying ontology, the extraction scripts, and for every source: its KG, its ontology, the e-types the application uses and its alignment file. Also the output paths. **This is the central file.** |
+| `pipeline.yaml` | stages 2, 3, 4 and `run_pipeline.py` | The unifying ontology, the extraction scripts, and for every source: its KG, its ontology, the e-types the application may use (the teleology keeps those with instances) and its alignment file. Also the output paths. **This is the central file.** |
 | `osm_source.yaml` | `1_extraction_osm.py` | Which OSM tags to download, which OSM ontology class each element gets (first matching rule wins), which OSM tags are copied as properties. |
 | `kge_source.yaml` | `1_extraction_kge.py` | Which CSV file becomes which KGE class, which column becomes which property, the `has_Near` columns, and how the tourists are linked to their places. |
 | `alignment_kge.yaml` | `2_mapping.py` | Alignment of the KGE ontology to the unifying ontology (`equivalent` / `child_of` rules for classes and properties). |
@@ -98,7 +98,7 @@ kind of place, plus `personas.csv` with the six tourists.
 | `1_extraction_osm.py` | 1 | no (OSM only) | Downloads the OSM elements with `osm2kg` (or reads the cache) and writes `output/osm_kg.ttl`. |
 | `1_extraction_kge.py` | 1 | no (KGE only) | Rebuilds the KGE KG from the CSV files and writes `output/kge_kg.ttl`. |
 | `2_mapping.py` | 2 | yes | Builds the teleontology. |
-| `3_teleology.py` | 3 | yes | Builds the teleology from the teleontology. |
+| `3_teleology.py` | 3 | yes | Builds the teleology from the teleontology, keeping the e-types used by the source KGs. |
 | `4_unification.py` | 4 | yes | Links the entities and writes the entity graph and the report. |
 | `kg_utils.py` | - | yes | Small helpers shared by all scripts. |
 
@@ -174,8 +174,10 @@ from, and stops on an unknown operation.
 
 ### `src/3_teleology.py` (generic): teleology
 
-Reads the teleontology (not the entity graph) and writes, for every e-type listed in
-`pipeline.yaml`:
+Reads the teleontology and computes the minimal subset needed by the input data: of the e-types
+listed in `pipeline.yaml`, it keeps only those with at least one instance in their source KG and
+prints the ones it leaves out (with the current OSM area: `motel`, `alpine_hut`, `railway_halt`).
+For every e-type kept it writes:
 
 - the e-type as an `owl:Class`, with its label and comment, **without any hierarchy**;
 - every property whose domain is the e-type or one of its ancestors, attached with
@@ -228,7 +230,7 @@ An alternative configuration can be passed for experiments:
 | download more kinds of OSM places | add a rule to `mappings` in `config/osm_source.yaml` **and** add its class to the `osm` `etypes` in `config/pipeline.yaml` | no |
 | keep more OSM tags as properties | `tags_as_properties` in `config/osm_source.yaml` | no |
 | change how the KGE CSV files are read | `config/kge_source.yaml` (`places`, `place_columns`, `near`, `people`) | no |
-| change which e-types the application uses | `etypes` of the source in `config/pipeline.yaml` | no |
+| change which e-types the application may use | `etypes` of the source in `config/pipeline.yaml` (only those with instances end up in the teleology) | no |
 | change how KGE is aligned to the unifying ontology | `config/alignment_kge.yaml` | no |
 | allow a third alignment operation | `AXIOMS` in `src/2_mapping.py` (and explain it in the alignment files) | yes, small |
 | tune the unification (thresholds, normalization, which primitives) | `config/unification.yaml` | no |

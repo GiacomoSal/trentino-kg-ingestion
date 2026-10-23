@@ -28,7 +28,7 @@ file does and which one to change for the most common changes.
 | File | What it is |
 |---|---|
 | `teleontology.ttl` | E-type graph: the e-types of the sources with their hierarchy and properties, plus their alignment to the unifying ontology (`ontologies/OSM-GTFS-zzz.owl`) |
-| `teleology.ttl` | built from the teleontology: the e-types of the application, no hierarchy, each with all its properties; the entity graph is built on it |
+| `teleology.ttl` | built from the teleontology: the e-types of the application that have instances, no hierarchy, each with all its properties; the entity graph is built on it |
 | `entity_graph.ttl` | the entities of all sources, unchanged (original URI and type), plus the `owl:sameAs` links between the same real-world things |
 | `unification_report.csv` | every link with its name similarity and distance |
 
@@ -42,7 +42,7 @@ are generic and only read `config/pipeline.yaml` and the files it points to.
 | 1 | `src/1_extraction_osm.py` | `config/osm_source.yaml`, OpenStreetMap | `osm_kg.ttl` (cache: `cache/raw_osm_data.pkl`) |
 | 1 | `src/1_extraction_kge.py` | `config/kge_source.yaml`, `datasets/kge/*.csv` | `kge_kg.ttl` |
 | 2 | `src/2_mapping.py` | `config/pipeline.yaml`, source ontologies, `config/alignment_*.yaml` | `teleontology.ttl` |
-| 3 | `src/3_teleology.py` | `config/pipeline.yaml`, `teleontology.ttl` | `teleology.ttl` |
+| 3 | `src/3_teleology.py` | `config/pipeline.yaml`, `teleontology.ttl`, source KGs | `teleology.ttl` |
 | 4 | `src/4_unification.py` | `config/pipeline.yaml`, `config/unification.yaml`, source KGs, `teleology.ttl` | `entity_graph.ttl`, report |
 
 From the repository root, `python run_pipeline.py` runs the extraction scripts listed in
@@ -68,7 +68,9 @@ osm_ont:name`) and `child_of` (e.g. `etype:restaurant ⊑ osm_ont:restaurant`). 
 need no alignment.
 
 ### Stage 3: teleology
-Built from the teleontology: the e-types listed in `config/pipeline.yaml`, with no hierarchy. Each
+Built from the teleontology: the minimal subset needed by the input data, i.e. the e-types listed
+in `config/pipeline.yaml` that have at least one instance in their source KG (the others are
+reported and left out), with no hierarchy. Each
 e-type gets the properties of its class and of its ancestors in its own source hierarchy, so they are
 collapsed onto it. The alignment is not followed here: it stays in the teleontology. Properties are
 attached with `schema:domainIncludes` / `schema:rangeIncludes`, which, unlike `rdfs:domain` /
