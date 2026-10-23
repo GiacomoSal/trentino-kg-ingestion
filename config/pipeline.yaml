@@ -18,7 +18,8 @@ namespaces:
   etype: "http://knowdive.disi.unitn.it/etype#"
 
 # For every source: its KG, the ontology its e-types come from, the e-types the application
-# uses (they become the teleology) and, if it is not the unifying ontology, the alignment file.
+# may use and, if it is not the unifying ontology, the alignment file. The teleology keeps
+# only the e-types that have at least one instance in the source KG.
 sources:
   osm:
     kg: "output/osm_kg.ttl"
@@ -42,8 +43,8 @@ outputs:
   # E-type graph: the e-types of the sources with their hierarchy and properties, plus the
   # alignment to the unifying ontology
   teleontology: "output/teleontology.ttl"
-  # flat schema built from the teleontology: the application e-types, no hierarchy, each with
-  # all its properties; the entity graph is built on it
+  # flat schema built from the teleontology: the application e-types that have instances,
+  # no hierarchy, each with all its properties; the entity graph is built on it
   teleology: "output/teleology.ttl"
   # entities of all sources and the owl:sameAs links between them
   entity_graph: "output/entity_graph.ttl"
