@@ -1,9 +1,11 @@
 """Stage 3: teleology (generic), built from the teleontology.
 
-The teleology is the flat schema the entity graph is built on: only the e-types the
-application uses (listed for each source in config/pipeline.yaml), with no hierarchy.
-Each e-type gets all the properties of its own class and of its ancestors in the
-source hierarchy, so data and object properties are "collapsed" onto it (iTelos).
+The teleology is the flat schema the entity graph is built on: the minimal subset of
+the teleontology needed by the input data. Of the e-types listed for each source in
+config/pipeline.yaml, only those with at least one instance in the source KG are kept
+(the others are reported), with no hierarchy. Each e-type gets all the properties of
+its own class and of its ancestors in the source hierarchy, so data and object
+properties are "collapsed" onto it (iTelos).
 The alignment to the unifying ontology is not followed here: it stays in the
 teleontology, and each source keeps its own e-types and properties.
 
@@ -62,14 +64,22 @@ def main() -> None:
     # property -> e-types it is collapsed onto
     domains = defaultdict(set)
     etypes = []
-    for source in cfg["sources"].values():
+    for name, source in cfg["sources"].items():
+        # minimal subset: keep only the e-types that the source KG actually uses
+        used = set(Graph().parse(source["kg"]).objects(None, RDF.type))
+        unused = []
         for e in source["etypes"]:
             etype = expand(e, ns)
+            if etype not in used:
+                unused.append(e)
+                continue
             etypes.append(etype)
             ancestors = own_ancestors(etype, tele)
             for prop, domain in tele.subject_objects(RDFS.domain):
                 if domain in ancestors:
                     domains[prop].add(etype)
+        if unused:
+            print(f"  {name}: e-types with no instances, left out of the teleology: {', '.join(unused)}")
 
     teleology = Graph()
     for prefix, uri in tele.namespaces():
