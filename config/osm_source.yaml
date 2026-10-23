@@ -1,0 +1,80 @@
+# OSM source: which tags to download (stage 1) and which class of the OSM ontology
+# each element gets in the OSM source KG (stage 2).
+# The OSM ontology (OSM-GTFS-zzz.owl) is also the unifying ontology, so these classes
+# are already unified types. The first rule whose filter matches the element's tags wins.
+
+namespaces:
+  osm_ont: "http://www.semanticweb.org/lixiaoyue/ontologies/2023/2/untitled-ontology-26#"
+
+mappings:
+  - target_class: "osm_ont:restaurant"
+    osm_filter:
+      amenity: ["restaurant"]
+
+  - target_class: "osm_ont:fast_food"
+    osm_filter:
+      amenity: ["fast_food"]
+
+  - target_class: "osm_ont:bar"
+    osm_filter:
+      amenity: ["bar"]
+
+  - target_class: "osm_ont:pub"
+    osm_filter:
+      amenity: ["pub"]
+
+  - target_class: "osm_ont:cafe"
+    osm_filter:
+      amenity: ["cafe"]
+
+  - target_class: "osm_ont:hotel"
+    osm_filter:
+      tourism: ["hotel"]
+
+  - target_class: "osm_ont:motel"
+    osm_filter:
+      tourism: ["motel"]
+
+  - target_class: "osm_ont:guesthouse"
+    osm_filter:
+      tourism: ["guest_house"]
+
+  - target_class: "osm_ont:alpine_hut"
+    osm_filter:
+      tourism: ["alpine_hut"]
+
+  # tourism=gallery has no class of its own in the OSM ontology
+  - target_class: "osm_ont:museum"
+    osm_filter:
+      tourism: ["museum", "gallery"]
+
+  - target_class: "osm_ont:castle"
+    osm_filter:
+      historic: ["castle"]
+
+  - target_class: "osm_ont:ruins"
+    osm_filter:
+      historic: ["ruins"]
+
+  - target_class: "osm_ont:railway_station"
+    osm_filter:
+      railway: ["station"]
+
+  - target_class: "osm_ont:railway_halt"
+    osm_filter:
+      railway: ["halt"]
+
+  - target_class: "osm_ont:bus_stop"
+    osm_filter:
+      highway: ["bus_stop"]
+
+# OSM tags copied as they are into the source KG, as properties
+# https://wiki.openstreetmap.org/wiki/Key:<tag> (the OSM ontology has no property for them)
+tags_as_properties:
+  - "addr:street"
+  - "addr:housenumber"
+  - "addr:postcode"
+  - "addr:city"
+  - "phone"
+  - "contact:phone"
+  - "website"

@@ -1,0 +1,357 @@
+"""Stage 4: entity unification (generic) -> entity graph.
+
+Reads the source KGs listed in pipeline.yaml and, for every pair of sources listed
+under "links" in unification.yaml, finds the entities that describe the same
+real-world thing and links them with owl:sameAs. The output is the entity graph:
+the entities of all sources, unchanged (original URI and type, so provenance is
+preserved), plus the owl:sameAs links. The entity graph is built on the teleology:
+every entity type must be one of its e-types, and the script reports any that is not.
+
+1. Type filter (always on): two entities are candidates only if their types are
+   compatible in the unifying ontology plus the teleontology, i.e. one type is
+   equal to or a subclass of the other.
+2. Primitives (each can be switched on or off in unification.yaml):
+   - name: Levenshtein similarity of the names >= min_similarity, either on the
+     whole names ("levenshtein") or between the shorter name and the most
+     similar part of the longer one ("partial")
+   - coordinates: distance between the two points <= max_distance_m
+   Every enabled primitive must hold.
+3. If one_to_one is set, each entity keeps only its best candidate.
+
+The name and coordinate properties of each source are found through the
+teleontology: every property equivalent to those of the unifying ontology.
+"""
+import csv
+import math
+import re
+import sys
+import unicodedata
+from collections import defaultdict
+from typing import Dict, List, Optional, Set
+
+from rdflib import Graph, URIRef
+from rdflib.namespace import OWL, RDF, RDFS
+
+from kg_utils import ensure_parent, expand, load_yaml
+
+PIPELINE = "config/pipeline.yaml"
+CONFIG = "config/unification.yaml"
+
+try:  # optional, much faster; the pure Python version gives the same results
+    from rapidfuzz.distance import Levenshtein as _rf_levenshtein
+except ImportError:
+    _rf_levenshtein = None
+
+
+# ---------------------------------------------------------------- primitives
+
+def levenshtein(a: str, b: str) -> int:
+    if _rf_levenshtein is not None:
+        return _rf_levenshtein.distance(a, b)
+    if len(a) < len(b):
+        a, b = b, a
+    previous = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        current = [i]
+        for j, cb in enumerate(b, 1):
+            current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (ca != cb)))
+        previous = current
+    return previous[-1]
+
+
+NORMALIZATION: dict = {}  # filled from unification.yaml in main()
+
+
+def normalize(name: str) -> str:
+    """Lowercase and collapse spaces; optionally drop accents, punctuation and generic words."""
+    name = name.lower()
+    if NORMALIZATION.get("strip_accents"):
+        name = "".join(c for c in unicodedata.normalize("NFKD", name) if not unicodedata.combining(c))
+    if NORMALIZATION.get("strip_punctuation"):
+        name = re.sub(r"[^\w\s]", " ", name)
+    ignore = set(NORMALIZATION.get("ignore_words") or [])
+    kept = [w for w in name.split() if w not in ignore]
+    # a name made only of generic words ("Hotel Bar") is kept as it is
+    return " ".join(kept) if kept else " ".join(name.split())
+
+
+def name_similarity(a: str, b: str) -> float:
+    """Normalized Levenshtein similarity of two already normalized names."""
+    longest = max(len(a), len(b))
+    return 1.0 if longest == 0 else 1.0 - levenshtein(a, b) / longest
+
+
+def partial_similarity(a: str, b: str, min_similarity: float = 0.0, min_length: int = 4) -> float:
+    """Levenshtein similarity between the shorter name and the most similar part of the longer.
+
+    "forst" vs "forsterbrau trento" -> 1.0, because "forst" appears in the longer name.
+    Semi-global edit distance: the shorter name may start and end anywhere in the longer.
+    Names shorter than min_length are compared as whole names.
+    Returns 0.0 when the similarity is below min_similarity.
+    """
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    if len(short) < min_length:
+        # a very short name ("duo", "nh") fits inside too many others: compare whole names
+        return name_similarity(a, b)
+    max_dist = int((1.0 - min_similarity) * len(short))
+    # column-wise DP over the shorter name; row 0 is all zeros (free start in the longer name)
+    column = list(range(len(short) + 1))
+    best = column[-1]
+    for cl in long_:
+        new = [0]
+        for i, cs in enumerate(short, 1):
+            new.append(min(column[i] + 1, new[i - 1] + 1, column[i - 1] + (cs != cl)))
+        column = new
+        best = min(best, column[-1])
+        if best == 0:
+            break
+    if best > max_dist:
+        return 0.0
+    return 1.0 - best / len(short)
+
+
+def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance (haversine) in metres."""
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(h))
+
+
+# ---------------------------------------------------------------- schema
+
+class Schema:
+    """Class hierarchy and property equivalences of unifying ontology + teleontology."""
+
+    def __init__(self, graph: Graph):
+        self.parents: Dict[URIRef, Set[URIRef]] = defaultdict(set)
+        for c, p in graph.subject_objects(RDFS.subClassOf):
+            if isinstance(p, URIRef):
+                self.parents[c].add(p)
+        for a, b in graph.subject_objects(OWL.equivalentClass):
+            if isinstance(b, URIRef):
+                self.parents[a].add(b)
+                self.parents[b].add(a)
+        self.equivalent_props: Dict[URIRef, Set[URIRef]] = defaultdict(set)
+        for a, b in graph.subject_objects(OWL.equivalentProperty):
+            self.equivalent_props[a].add(b)
+            self.equivalent_props[b].add(a)
+        self._ancestors: Dict[URIRef, Set[URIRef]] = {}
+
+    def ancestors(self, cls: URIRef) -> Set[URIRef]:
+        """The class itself and all its superclasses."""
+        if cls not in self._ancestors:
+            seen, todo = {cls}, [cls]
+            while todo:
+                for p in self.parents.get(todo.pop(), ()):
+                    if p not in seen:
+                        seen.add(p)
+                        todo.append(p)
+            self._ancestors[cls] = seen
+        return self._ancestors[cls]
+
+    def compatible(self, a: URIRef, b: URIRef) -> bool:
+        return b in self.ancestors(a) or a in self.ancestors(b)
+
+    def property_family(self, prop: URIRef) -> Set[URIRef]:
+        seen, todo = {prop}, [prop]
+        while todo:
+            for p in self.equivalent_props.get(todo.pop(), ()):
+                if p not in seen:
+                    seen.add(p)
+                    todo.append(p)
+        return seen
+
+
+# ---------------------------------------------------------------- entities
+
+class Entity:
+    def __init__(self, uri: URIRef):
+        self.uri = uri
+        self.types: Set[URIRef] = set()
+        self.name: Optional[str] = None
+        self.lat: Optional[float] = None
+        self.lon: Optional[float] = None
+
+
+def first_value(graph: Graph, subject, props: Set[URIRef]):
+    for p in props:
+        for o in graph.objects(subject, p):
+            return o
+    return None
+
+
+def read_entities(graph: Graph, name_props, lat_props, lon_props) -> List[Entity]:
+    entities = []
+    for subject in set(graph.subjects(RDF.type, None)):
+        if not isinstance(subject, URIRef):
+            continue
+        e = Entity(subject)
+        e.types = {t for t in graph.objects(subject, RDF.type) if isinstance(t, URIRef)}
+        name = first_value(graph, subject, name_props)
+        e.name = str(name) if name is not None else None
+        lat, lon = first_value(graph, subject, lat_props), first_value(graph, subject, lon_props)
+        try:
+            e.lat, e.lon = float(lat), float(lon)
+        except (TypeError, ValueError):
+            pass
+        entities.append(e)
+    return entities
+
+
+# ---------------------------------------------------------------- main
+
+class Settings:
+    """Primitive settings read from unification.yaml."""
+
+    def __init__(self, cfg: dict):
+        prim = cfg["primitives"]
+        self.use_name = prim["name"]["enabled"]
+        self.use_coords = prim["coordinates"]["enabled"]
+        self.min_sim = float(prim["name"]["min_similarity"])
+        self.max_dist = float(prim["coordinates"]["max_distance_m"])
+        self.method = prim["name"].get("method", "levenshtein")
+        self.partial_min_length = int(prim["name"].get("partial_min_length", 4))
+        self.one_to_one = cfg.get("one_to_one", True)
+        NORMALIZATION.update(prim["name"].get("normalization") or {})
+        if self.method not in ("levenshtein", "partial"):
+            print(f"[ERROR] unknown name method '{self.method}'")
+            sys.exit(1)
+
+
+def link_sources(left: List[Entity], right: List[Entity], schema: Schema, st: Settings):
+    """Candidates and chosen links between the entities of two sources."""
+    # group the right side by type to avoid comparing incompatible entities
+    right_by_type: Dict[URIRef, List[Entity]] = defaultdict(list)
+    for e in right:
+        for t in e.types:
+            right_by_type[t].append(e)
+
+    candidates = []
+    type_pairs = 0
+    for a in left:
+        seen = set()
+        for ta in a.types:
+            for tb, group in right_by_type.items():
+                if not schema.compatible(ta, tb):
+                    continue
+                for b in group:
+                    if b.uri in seen:
+                        continue
+                    seen.add(b.uri)
+                    type_pairs += 1
+                    dist = sim = None
+                    if st.use_coords:
+                        if None in (a.lat, a.lon, b.lat, b.lon):
+                            continue
+                        dist = distance_m(a.lat, a.lon, b.lat, b.lon)
+                        if dist > st.max_dist:
+                            continue
+                    if st.use_name:
+                        if not a.name or not b.name:
+                            continue
+                        na, nb = normalize(a.name), normalize(b.name)
+                        if st.method == "partial":
+                            sim = partial_similarity(na, nb, st.min_sim, st.partial_min_length)
+                        else:
+                            # cheap bound: the length difference alone can exclude the pair
+                            if 1 - abs(len(na) - len(nb)) / max(len(na), len(nb), 1) < st.min_sim:
+                                continue
+                            sim = name_similarity(na, nb)
+                        if sim < st.min_sim:
+                            continue
+                    # higher is better: name similarity, then closeness
+                    score = (sim if sim is not None else 0.0) + (1 - dist / st.max_dist if dist is not None else 0.0)
+                    candidates.append((score, a, b, sim, dist))
+
+    candidates.sort(key=lambda c: -c[0])
+    links, used_left, used_right = [], set(), set()
+    for score, a, b, sim, dist in candidates:
+        if st.one_to_one and (a.uri in used_left or b.uri in used_right):
+            continue
+        used_left.add(a.uri)
+        used_right.add(b.uri)
+        links.append((a, b, sim, dist))
+
+    # collisions: entities with more than one candidate before the one-to-one choice
+    per_left, per_right = defaultdict(int), defaultdict(int)
+    for _, a, b, _, _ in candidates:
+        per_left[a.uri] += 1
+        per_right[b.uri] += 1
+    collisions = (sum(1 for n in per_left.values() if n > 1), sum(1 for n in per_right.values() if n > 1))
+    return type_pairs, candidates, links, collisions
+
+
+def main() -> None:
+    pipeline = load_yaml(PIPELINE)
+    # an alternative unification config can be passed on the command line (for experiments)
+    cfg = load_yaml(sys.argv[1] if len(sys.argv) > 1 else CONFIG)
+    ns = cfg["namespaces"]
+    st = Settings(cfg)
+    out = pipeline["outputs"]
+
+    schema_graph = Graph()
+    schema_graph.parse(pipeline["unified_ontology"])
+    schema_graph.parse(out["teleontology"])
+    schema = Schema(schema_graph)
+    name_props = schema.property_family(expand(cfg["name_property"], ns))
+    lat_props = schema.property_family(expand(cfg["latitude_property"], ns))
+    lon_props = schema.property_family(expand(cfg["longitude_property"], ns))
+
+    graphs, entities = {}, {}
+    for key, source in pipeline["sources"].items():
+        g = Graph()
+        g.parse(source["kg"])
+        graphs[key] = g
+        entities[key] = read_entities(g, name_props, lat_props, lon_props)
+        print(f"Source {key}: {len(entities[key])} entities")
+
+    # the entity graph attaches to the teleology: every entity type must be an e-type of it
+    teleology = Graph()
+    teleology.parse(out["teleology"])
+    etypes = set(teleology.subjects(RDF.type, OWL.Class))
+    outside = {t for ents in entities.values() for e in ents for t in e.types if t not in etypes}
+    if outside:
+        print(f"[WARNING] entity types missing from the teleology: {sorted(outside)}")
+    else:
+        print(f"All entity types are e-types of the teleology ({len(etypes)} e-types)")
+
+    enabled = [p for p, on in (("name", st.use_name), ("coordinates", st.use_coords)) if on]
+    print(f"Filters: type (always) + {', '.join(enabled) if enabled else 'no primitive'}")
+    if not enabled:
+        print("[WARNING] no primitive enabled: every type-compatible pair would be linked")
+
+    all_links = []
+    for pair in cfg["links"]:
+        src, dst = pair["from"], pair["to"]
+        type_pairs, candidates, links, (col_l, col_r) = link_sources(entities[src], entities[dst], schema, st)
+        print(f"{src} -> {dst}: type-compatible pairs {type_pairs}, passing the primitives {len(candidates)}")
+        print(f"  collisions (entities with more than one candidate): {src} {col_l}, {dst} {col_r}")
+        print(f"  owl:sameAs links: {len(links)}")
+        all_links += [(src, dst) + link for link in links]
+
+    # entity graph: the entities of all sources, unchanged, plus the owl:sameAs links
+    entity_graph = Graph()
+    for g in graphs.values():
+        entity_graph += g
+        for prefix, uri in g.namespaces():
+            entity_graph.bind(prefix, uri, replace=True)
+    entity_graph.bind("owl", OWL)
+    for _, _, a, b, _, _ in all_links:
+        entity_graph.add((a.uri, OWL.sameAs, b.uri))
+    entity_graph.serialize(destination=ensure_parent(out["entity_graph"]), format="turtle", encoding="utf-8")
+
+    with open(ensure_parent(out["report"]), "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["from_source", "from_uri", "from_name", "to_source", "to_uri", "to_name",
+                    "name_similarity", "distance_m"])
+        for src, dst, a, b, sim, dist in sorted(all_links, key=lambda l: (l[0], l[2].name or "")):
+            w.writerow([src, a.uri, a.name, dst, b.uri, b.name,
+                        "" if sim is None else f"{sim:.2f}", "" if dist is None else f"{dist:.1f}"])
+
+    print(f"owl:sameAs links in total: {len(all_links)} -> {out['entity_graph']} (details in {out['report']})")
+
+
+if __name__ == "__main__":
+    main()
