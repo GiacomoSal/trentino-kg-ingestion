@@ -1,5 +1,5 @@
-# OSM source: which tags to download (stage 1) and which class of the OSM ontology
-# each element gets in the OSM source KG (stage 2).
+# OSM source (stage 1): which tags to download and which class of the OSM ontology
+# each element gets in the OSM source KG (output/osm_kg.ttl).
 # The OSM ontology (OSM-GTFS-zzz.owl) is also the unifying ontology, so these classes
 # are already unified types. The first rule whose filter matches the element's tags wins.
 
